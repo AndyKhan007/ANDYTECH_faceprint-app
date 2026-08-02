@@ -30,7 +30,7 @@
     <header class="w-full bg-brand-card border-b border-slate-800 p-4 flex justify-between items-center shadow-md">
         <div class="flex items-center space-x-3">
             <div class="w-3 h-3 bg-brand-success rounded-full animate-pulse"></div>
-            <span class="font-bold tracking-wider text-sm md:text-base">BIO-ATTENDANCE SYSTEM</span>
+            <span class="font-bold tracking-wider text-sm md:text-base">ANDYTECH [BIO-ATTENDANCE SYSTEM]</span>
         </div>
         <div id="real-time-clock" class="text-sm font-mono text-slate-400">00:00:00 | 00-00-0000</div>
     </header>
@@ -128,14 +128,8 @@
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-xs text-slate-400 mb-1">User ID (Otomatis)</label>
-                    <input type="text" id="reg-id" placeholder="User ID (Contoh: U001)" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-brand-accent text-white font-mono">
-                </div>
-                <div>
-                    <label class="block text-xs text-slate-400 mb-1">Nama Lengkap User</label>
-                    <input type="text" id="reg-name" placeholder="Nama Lengkap User" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-brand-accent text-white">
-                </div>
+                <input type="text" id="reg-id" placeholder="User ID (Contoh: U001)" class="bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-brand-accent">
+                <input type="text" id="reg-name" placeholder="Nama Lengkap User" class="bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-brand-accent">
             </div>
 
             <div class="relative w-full aspect-video bg-black rounded-xl overflow-hidden border-2 border-slate-700 shadow-inner flex items-center justify-center">
@@ -218,46 +212,13 @@
 
         // Fetch Database Wajah untuk Absensi
         async function fetchFaceDatabase() {
-            if (!API_URL || API_URL === "https://script.google.com/macros/s/AKfycbyxVwkFVeslnWJXLswbU9Cy7CjhOiOHMVPWsbkJjNHkHyDFqkD4X41JD5jg696m5pSh/exec") return;
+            if (!API_URL || API_URL === "MASUKKAN_URL_WEB_APP_ANDA_DISINI") return;
             try {
                 const response = await fetch(API_URL);
                 const data = await response.json();
                 registeredFaceDatabase = data;
             } catch (err) {
                 console.error("Gagal mengambil database wajah:", err);
-            }
-        }
-
-        // Fungsi Auto-generate User ID berikutnya (U001 -> U002 dst)
-        function generateNextUserId() {
-            const regIdInput = document.getElementById('reg-id');
-            
-            // Jika database belum ada data sama sekali, biarkan kosong agar bisa diisi manual
-            if (!registeredFaceDatabase || registeredFaceDatabase.length === 0) {
-                regIdInput.value = ""; 
-                return;
-            }
-
-            let maxNum = 0;
-            registeredFaceDatabase.forEach(person => {
-                if (person.id) {
-                    // Deteksi pola awalan huruf "U" diikuti angka (misal: U001, U02, U3)
-                    const match = String(person.id).trim().match(/^U(\d+)$/i);
-                    if (match) {
-                        const num = parseInt(match[1], 10);
-                        if (num > maxNum) maxNum = num;
-                    }
-                }
-            });
-
-            // Jika ditemukan format "U...", buatkan ID otomatis berikutnya
-            if (maxNum > 0) {
-                const nextNum = maxNum + 1;
-                // Format angka menjadi 3 digit (contoh: 2 -> U002, 12 -> U012)
-                regIdInput.value = 'U' + String(nextNum).padStart(3, '0');
-            } else {
-                // Jika ID di sheet menggunakan format lain/bebas, biarkan ditulis manual
-                regIdInput.value = ""; 
             }
         }
 
@@ -332,11 +293,6 @@
                 if (!modelsLoaded) { alert("Model AI sedang dimuat dari server, mohon tunggu sebentar..."); switchView('view-home'); return; }
                 startCamera('reg-video-feed');
                 resetRegistration();
-                
-                // Ambil database terbaru & buat ID otomatis
-                fetchFaceDatabase().then(() => {
-                    generateNextUserId();
-                });
             }
         }
 
@@ -513,10 +469,8 @@
         ];
 
         async function captureNextPose() {
-            const idInput = document.getElementById('reg-id');
-            const nameInput = document.getElementById('reg-name');
-            const id = idInput.value.trim();
-            const name = nameInput.value.trim();
+            const id = document.getElementById('reg-id').value;
+            const name = document.getElementById('reg-name').value;
 
             if(!id || !name) { alert("Isi User ID dan Nama Lengkap terlebih dahulu!"); return; }
             
@@ -548,14 +502,9 @@
                         })
                     });
                     alert("Pendaftaran wajah berhasil disimpan ke database!");
-                    
-                    // Reset input nama, perbarui database & buat ID urutan berikutnya
-                    nameInput.value = '';
-                    await fetchFaceDatabase();
-                    generateNextUserId();
-                    resetRegistration();
-                    
                     switchView('view-home');
+                    document.getElementById('reg-id').value = '';
+                    document.getElementById('reg-name').value = '';
                 } catch (err) {
                     alert("Gagal menyimpan data ke server.");
                 } finally {
