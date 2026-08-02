@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Faceprint & Absensi Biometrik</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Face-API.js CDN -->
+    <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: { dark: '#0f172a', card: '#1e293b', accent: '#3b82f6', success: '#10b981' }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-brand-dark text-slate-100 font-sans min-h-screen flex flex-col justify-between select-none">
+
+    <!-- HEADER / STATUS BAR -->
+    <header class="w-full bg-brand-card border-b border-slate-800 p-4 flex justify-between items-center shadow-md">
+        <div class="flex items-center space-x-3">
+            <div class="w-3 h-3 bg-brand-success rounded-full animate-pulse"></div>
+            <span class="font-bold tracking-wider text-sm md:text-base">ANDYTECH [BIO-ATTENDANCE SYSTEM]</span>
+        </div>
+        <div id="real-time-clock" class="text-sm font-mono text-slate-400">00:00:00 | 00-00-0000</div>
+    </header>
+
+    <!-- MAIN CONTAINER -->
+    <main class="flex-grow flex items-center justify-center p-4">
+
+        <!-- 1. HOME VIEW -->
+        <section id="view-home" class="w-full max-w-md bg-brand-card border border-slate-700/50 rounded-2xl p-8 shadow-2xl text-center space-y-8">
+            <div>
+                <div class="w-20 h-20 bg-brand-accent/20 border border-brand-accent rounded-full flex items-center justify-center mx-auto mb-4 text-brand-accent text-3xl shadow-inner">
+                    <i class="fa-solid fa-fingerprint"></i>
+                </div>
+                <h1 class="text-2xl font-bold tracking-tight">Sistem Faceprint</h1>
+                <p class="text-slate-400 text-sm mt-1">Silakan pilih menu operasional di bawah ini</p>
+            </div>
+
+            <div class="space-y-4">
+                <button onclick="switchView('view-faceprint')" class="w-full py-4 bg-blue-600 hover:bg-blue-500 transition font-semibold rounded-xl shadow-lg flex items-center justify-center space-x-3 text-lg group">
+                    <i class="fa-solid fa-camera group-hover:scale-110 transition-transform"></i>
+                    <span>Mulai Faceprint</span>
+                </button>
+                <button onclick="switchView('view-admin-login')" class="w-full py-4 bg-slate-800 hover:bg-slate-700 border border-slate-600 transition font-semibold rounded-xl shadow-lg flex items-center justify-center space-x-3 text-lg text-slate-300">
+                    <i class="fa-solid fa-lock"></i>
+                    <span>Login Admin / Pendaftaran</span>
+                </button>
+            </div>
+        </section>
+
+        <!-- 2. FACEPRINT (ABSENSI) VIEW -->
+        <section id="view-faceprint" class="hidden w-full max-w-2xl bg-brand-card border border-slate-700/50 rounded-2xl p-6 shadow-2xl space-y-6">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-4">
+                <h2 class="text-xl font-bold flex items-center space-x-2">
+                    <i class="fa-solid fa-video text-brand-accent"></i>
+                    <span>Pemindaian Kehadiran (Faceprint)</span>
+                </h2>
+                <button onclick="switchView('view-home')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+
+            <div id="video-container" class="relative w-full aspect-video bg-black rounded-xl overflow-hidden border-2 border-brand-accent/50 shadow-inner flex items-center justify-center">
+                <video id="video-feed" autoplay playsinline muted class="w-full h-full object-cover transform -scale-x-100 absolute inset-0"></video>
+                <canvas id="overlay-canvas" class="absolute inset-0 w-full h-full object-cover transform -scale-x-100"></canvas>
+                
+                <div class="absolute inset-0 border-[30px] border-black/40 pointer-events-none flex items-center justify-center">
+                    <div class="w-48 h-64 border-2 border-dashed border-brand-success rounded-full animate-pulse flex items-center justify-center">
+                        <span id="scan-status-label" class="text-xs bg-black/60 px-2 py-1 rounded text-brand-success font-mono">Posisikan Wajah</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-between items-center bg-slate-900/60 p-4 rounded-xl border border-slate-800 text-sm">
+                <div>
+                    <p class="text-slate-400">Status GPS:</p>
+                    <p id="gps-status-text" class="text-brand-success font-medium"><i class="fa-solid fa-spinner fa-spin"></i> Memeriksa GPS...</p>
+                </div>
+                <button id="btn-proses-absen" onclick="prosesAbsen()" class="px-6 py-2.5 bg-brand-success hover:bg-emerald-600 font-bold rounded-lg shadow transition">
+                    Proses Absen
+                </button>
+            </div>
+        </section>
+
+        <!-- 3. ADMIN LOGIN VIEW -->
+        <section id="view-admin-login" class="hidden w-full max-w-md bg-brand-card border border-slate-700/50 rounded-2xl p-8 shadow-2xl space-y-6">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-4">
+                <h2 class="text-xl font-bold flex items-center space-x-2">
+                    <i class="fa-solid fa-shield-halved text-brand-accent"></i>
+                    <span>Login Administrator</span>
+                </h2>
+                <button onclick="switchView('view-home')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+
+            <form onsubmit="handleAdminLogin(event)" class="space-y-4">
+                <div>
+                    <label class="block text-sm text-slate-400 mb-1">Username Admin</label>
+                    <input type="text" id="admin-user" required class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-brand-accent text-white" placeholder="Masukkan username">
+                </div>
+                <div>
+                    <label class="block text-sm text-slate-400 mb-1">Password</label>
+                    <input type="password" id="admin-pass" required class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-brand-accent text-white" placeholder="Masukkan password">
+                </div>
+                <button type="submit" id="btn-login-submit" class="w-full py-3.5 bg-blue-600 hover:bg-blue-500 transition font-semibold rounded-xl shadow-lg mt-2">
+                    Masuk ke Pendaftaran
+                </button>
+            </form>
+        </section>
+
+        <!-- 4. FACE REGISTRATION VIEW -->
+        <section id="view-registration" class="hidden w-full max-w-2xl bg-brand-card border border-slate-700/50 rounded-2xl p-6 shadow-2xl space-y-6">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-4">
+                <h2 class="text-xl font-bold flex items-center space-x-2">
+                    <i class="fa-solid fa-user-plus text-brand-accent"></i>
+                    <span>Pendaftaran Wajah Baru (7 Pose)</span>
+                </h2>
+                <button onclick="switchView('view-home')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <input type="text" id="reg-id" placeholder="User ID (Contoh: U001)" class="bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-brand-accent">
+                <input type="text" id="reg-name" placeholder="Nama Lengkap User" class="bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-brand-accent">
+            </div>
+
+            <div class="relative w-full aspect-video bg-black rounded-xl overflow-hidden border-2 border-slate-700 shadow-inner flex items-center justify-center">
+                <video id="reg-video-feed" autoplay playsinline muted class="w-full h-full object-cover transform -scale-x-100"></video>
+                
+                <div class="absolute top-4 left-1/2 transform -translate-x-1/2 bg-black/80 border border-brand-accent px-4 py-2 rounded-full text-center">
+                    <span id="pose-instruction" class="text-sm font-semibold text-brand-accent">Langkah 1/7: Hadap Depan Lurus (Netral)</span>
+                </div>
+            </div>
+
+            <div class="space-y-2">
+                <div class="flex justify-between text-xs text-slate-400">
+                    <span id="progress-text">Progress Sampel: 0 / 7</span>
+                    <span id="progress-percentage">0%</span>
+                </div>
+                <div class="w-full bg-slate-900 h-2.5 rounded-full overflow-hidden border border-slate-800">
+                    <div id="progress-bar" class="bg-brand-success h-full w-0 transition-all duration-300"></div>
+                </div>
+            </div>
+
+            <div class="flex justify-between items-center pt-2">
+                <button onclick="resetRegistration()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-sm rounded-lg border border-slate-600 transition">Reset</button>
+                <button onclick="captureNextPose()" id="btn-capture" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 font-bold rounded-lg shadow transition flex items-center space-x-2">
+                    <i class="fa-solid fa-camera"></i>
+                    <span>Ambil Sampel Pose Ini</span>
+                </button>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="w-full text-center py-4 text-xs text-slate-500 border-t border-slate-800">
+        Web-Based Faceprint & Geofencing System &bull; Powered by Google Sheets & Apps Script
+    </footer>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        // URL Apps Script Web App (Pastikan ganti dengan URL /exec Anda)
+        const API_URL = "https://script.google.com/macros/s/AKfycbyxVwkFVeslnWJXLswbU9Cy7CjhOiOHMVPWsbkJjNHkHyDFqkD4X41JD5jg696m5pSh/exec";
+
+        // CDN Model Face-API.js
+        const MODEL_URL = "https://justadudewhohacks.github.io/face-api.js/models";
+
+        // Konfigurasi Lokasi Kantor
+        const OFFICE_LAT = 5.350433995757128;
+        const OFFICE_LNG = 100.30360072954902;
+        const MAX_RADIUS_METERS = 500;
+
+        let activeStream = null;
+        let modelsLoaded = false;
+        let currentGpsData = "Tidak Terdeteksi";
+        let attendanceStatus = "Di Luar Wilayah Kerja";
+        let detectInterval;
+        let registeredFaceDatabase = [];
+
+        // Jam Real-time
+        setInterval(() => {
+            const now = new Date();
+            const timeString = now.toTimeString().split(' ')[0];
+            const dateString = String(now.getDate()).padStart(2, '0') + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + now.getFullYear();
+            document.getElementById('real-time-clock').innerText = `${timeString} | ${dateString}`;
+        }, 1000);
+
+        // Load Model AI dari CDN Cloud
+        async function loadFaceModels() {
+            try {
+                console.log("Memuat model AI dari CDN Cloud...");
+                await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
+                await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+                await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+                modelsLoaded = true;
+                console.log("Model AI berhasil dimuat!");
+            } catch (error) {
+                console.error("Gagal memuat model:", error);
+                alert("Gagal memuat model AI dari server. Pastikan koneksi internet Anda aktif.");
+            }
+        }
+        window.addEventListener('load', loadFaceModels);
+
+        // Fetch Database Wajah untuk Absensi
+        async function fetchFaceDatabase() {
+            if (!API_URL || API_URL === "MASUKKAN_URL_WEB_APP_ANDA_DISINI") return;
+            try {
+                const response = await fetch(API_URL);
+                const data = await response.json();
+                registeredFaceDatabase = data;
+            } catch (err) {
+                console.error("Gagal mengambil database wajah:", err);
+            }
+        }
+
+        // Geolocation Check (Selalu mengizinkan absensi)
+        function checkLocation() {
+            const statusText = document.getElementById('gps-status-text');
+            const btnAbsen = document.getElementById('btn-proses-absen');
+
+            btnAbsen.disabled = false;
+
+            if (!navigator.geolocation) {
+                statusText.innerHTML = `<span class="text-yellow-400 font-medium">GPS Tidak Didukung</span>`;
+                currentGpsData = "Tidak Terdeteksi";
+                attendanceStatus = "Di Luar Wilayah Kerja";
+                return;
+            }
+
+            statusText.innerHTML = `<span class="text-yellow-500"><i class="fa-solid fa-spinner fa-spin"></i> Memeriksa lokasi...</span>`;
+            
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const userLat = position.coords.latitude;
+                    const userLng = position.coords.longitude;
+                    currentGpsData = `${userLat}, ${userLng}`;
+
+                    const distance = calculateDistance(OFFICE_LAT, OFFICE_LNG, userLat, userLng);
+                    
+                    if (distance <= MAX_RADIUS_METERS) {
+                        attendanceStatus = "Hadir";
+                        statusText.innerHTML = `<span class="text-brand-success font-medium">Dalam Radius (${Math.round(distance)}m)</span>`;
+                    } else {
+                        attendanceStatus = "Di Luar Wilayah Kerja";
+                        statusText.innerHTML = `<span class="text-yellow-400 font-medium">Di Luar Radius (${Math.round(distance)}m)</span>`;
+                    }
+                },
+                (error) => {
+                    currentGpsData = "GPS Tidak Aktif";
+                    attendanceStatus = "Di Luar Wilayah Kerja";
+                    statusText.innerHTML = `<span class="text-yellow-400 font-medium">GPS Off / Tidak Terdeteksi</span>`;
+                },
+                { enableHighAccuracy: true, timeout: 5000 }
+            );
+        }
+
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371e3;
+            const p1 = lat1 * Math.PI / 180;
+            const p2 = lat2 * Math.PI / 180;
+            const dp = (lat2 - lat1) * Math.PI / 180;
+            const dl = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dp/2) * Math.sin(dp/2) + Math.cos(p1) * Math.cos(p2) * Math.sin(dl/2) * Math.sin(dl/2);
+            return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+        }
+
+        // View Switcher
+        function switchView(viewId) {
+            ['view-home', 'view-faceprint', 'view-admin-login', 'view-registration'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+            document.getElementById(viewId).classList.remove('hidden');
+
+            stopCamera();
+            
+            if (viewId === 'view-faceprint') {
+                if (!modelsLoaded) { alert("Model AI sedang dimuat dari server, mohon tunggu sebentar..."); switchView('view-home'); return; }
+                fetchFaceDatabase();
+                startCamera('video-feed').then(() => {
+                    checkLocation();
+                    startFaceDetection('video-feed', 'overlay-canvas');
+                });
+            } else if (viewId === 'view-registration') {
+                if (!modelsLoaded) { alert("Model AI sedang dimuat dari server, mohon tunggu sebentar..."); switchView('view-home'); return; }
+                startCamera('reg-video-feed');
+                resetRegistration();
+            }
+        }
+
+        async function startCamera(elementId) {
+            try {
+                activeStream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+                const videoElement = document.getElementById(elementId);
+                videoElement.srcObject = activeStream;
+                return new Promise(resolve => { videoElement.onloadedmetadata = () => resolve(); });
+            } catch (err) {
+                alert("Gagal mengakses kamera. Pastikan izin akses kamera sudah diizinkan di browser!");
+            }
+        }
+
+        function stopCamera() {
+            if (activeStream) {
+                activeStream.getTracks().forEach(track => track.stop());
+                activeStream = null;
+            }
+            if(detectInterval) clearInterval(detectInterval);
+        }
+
+        // Face Detection & Matching (Optimized Version)
+        async function startFaceDetection(videoId, canvasId) {
+            const video = document.getElementById(videoId);
+            const canvas = document.getElementById(canvasId);
+            const displaySize = { width: video.videoWidth || 640, height: video.videoHeight || 480 };
+            faceapi.matchDimensions(canvas, displaySize);
+
+            let isProcessing = false;
+
+            detectInterval = setInterval(async () => {
+                if(video.paused || video.ended || isProcessing) return;
+                
+                isProcessing = true;
+
+                try {
+                    const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.4 });
+                    const detection = await faceapi.detectSingleFace(video, options)
+                        .withFaceLandmarks()
+                        .withFaceDescriptor();
+
+                    const ctx = canvas.getContext('2d');
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                    const statusLabel = document.getElementById('scan-status-label');
+
+                    if (detection && registeredFaceDatabase.length > 0) {
+                        const box = faceapi.resizeResults(detection, displaySize).detection.box;
+                        let bestMatch = { label: "unknown", distance: 1.0 };
+                        
+                        for (let person of registeredFaceDatabase) {
+                            for (let desc of person.descriptors) {
+                                let parsedDesc = typeof desc === 'string' ? JSON.parse(desc) : desc;
+                                const storedDesc = new Float32Array(Object.values(parsedDesc));
+                                
+                                const distance = faceapi.euclideanDistance(detection.descriptor, storedDesc);
+                                if (distance < bestMatch.distance) {
+                                    bestMatch = { id: person.id, name: person.name, distance: distance };
+                                }
+                            }
+                        }
+
+                        if (bestMatch.distance < 0.60) {
+                            ctx.strokeStyle = '#10b981';
+                            statusLabel.innerText = `Terdeteksi: ${bestMatch.name}`;
+                            window.matchedUser = bestMatch;
+                        } else {
+                            ctx.strokeStyle = '#ef4444';
+                            statusLabel.innerText = "Wajah Tidak Dikenal";
+                            window.matchedUser = null;
+                        }
+
+                        ctx.lineWidth = 3;
+                        ctx.strokeRect(box.x, box.y, box.width, box.height);
+                    } else if (detection) {
+                        const box = faceapi.resizeResults(detection, displaySize).detection.box;
+                        ctx.strokeStyle = '#3b82f6';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(box.x, box.y, box.width, box.height);
+                        statusLabel.innerText = "Mencocokkan Database...";
+                        window.matchedUser = null;
+                    } else {
+                        statusLabel.innerText = "Posisikan Wajah";
+                        window.matchedUser = null;
+                    }
+                } catch (err) {
+                    console.error("Error AI detection:", err);
+                } finally {
+                    isProcessing = false;
+                }
+            }, 300);
+        }
+
+        // Kirim Absen ke Google Sheets
+        async function prosesAbsen() {
+            if (!window.matchedUser) { 
+                alert("Wajah tidak dikenali atau belum terdaftar!"); 
+                return; 
+            }
+
+            const btn = document.getElementById('btn-proses-absen');
+            btn.innerText = "Mengirim...";
+            btn.disabled = true;
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        action: 'absen',
+                        id: window.matchedUser.id,
+                        name: window.matchedUser.name,
+                        gps: currentGpsData,
+                        status: attendanceStatus
+                    })
+                });
+                
+                const result = await response.json();
+                alert(`Absensi Berhasil!\nNama: ${window.matchedUser.name}\nStatus: ${attendanceStatus}`);
+                switchView('view-home');
+            } catch (err) {
+                alert("Gagal mengirim absensi. Pastikan koneksi internet aktif.");
+            } finally {
+                btn.innerText = "Proses Absen";
+                btn.disabled = false;
+            }
+        }
+
+        // Admin Login
+        async function handleAdminLogin(event) {
+            event.preventDefault();
+            const u = document.getElementById('admin-user').value;
+            const p = document.getElementById('admin-pass').value;
+            const btn = document.getElementById('btn-login-submit');
+
+            btn.innerText = "Memverifikasi...";
+            btn.disabled = true;
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'admin_login', username: u, password: p })
+                });
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    alert("Login Berhasil!");
+                    switchView('view-registration');
+                    document.getElementById('admin-user').value = '';
+                    document.getElementById('admin-pass').value = '';
+                } else {
+                    alert(result.message);
+                }
+            } catch (err) {
+                alert("Kesalahan koneksi ke database server. Periksa kembali API_URL dan otorisasi Apps Script.");
+            } finally {
+                btn.innerText = "Masuk ke Pendaftaran";
+                btn.disabled = false;
+            }
+        }
+
+        // Registrasi Wajah 7 Pose
+        let currentPoseStep = 1;
+        const totalPoses = 7;
+        let registeredFaceDescriptors = []; 
+        const poseDescriptions = [
+            "Langkah 1/7: Hadap Depan Lurus (Netral)",
+            "Langkah 2/7: Sedikit Menoleh ke Kiri",
+            "Langkah 3/7: Sedikit Menoleh ke Kanan",
+            "Langkah 4/7: Sedikit Menunduk ke Bawah",
+            "Langkah 5/7: Sedikit Mendongak ke Atas",
+            "Langkah 6/7: Hadap Depan (Mata Tertutup Rapat)",
+            "Langkah 7/7: Hadap Depan (Mata Terbuka Lebar)"
+        ];
+
+        async function captureNextPose() {
+            const id = document.getElementById('reg-id').value;
+            const name = document.getElementById('reg-name').value;
+
+            if(!id || !name) { alert("Isi User ID dan Nama Lengkap terlebih dahulu!"); return; }
+            
+            const video = document.getElementById('reg-video-feed');
+            const detection = await faceapi.detectSingleFace(video, new faceapi.SsdMobilenetv1Options())
+                    .withFaceLandmarks()
+                    .withFaceDescriptor();
+                    
+            if(!detection) { alert("Wajah tidak terdeteksi! Pastikan wajah terlihat jelas di kamera."); return; }
+            
+            registeredFaceDescriptors.push(Array.from(detection.descriptor));
+
+            if (currentPoseStep < totalPoses) {
+                currentPoseStep++;
+                updateRegistrationUI();
+            } else {
+                const btn = document.getElementById('btn-capture');
+                btn.innerText = "Menyimpan ke Server...";
+                btn.disabled = true;
+
+                try {
+                    await fetch(API_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            action: 'register',
+                            id: id,
+                            name: name,
+                            descriptors: registeredFaceDescriptors
+                        })
+                    });
+                    alert("Pendaftaran wajah berhasil disimpan ke database!");
+                    switchView('view-home');
+                    document.getElementById('reg-id').value = '';
+                    document.getElementById('reg-name').value = '';
+                } catch (err) {
+                    alert("Gagal menyimpan data ke server.");
+                } finally {
+                    btn.disabled = false;
+                }
+            }
+        }
+
+        function updateRegistrationUI() {
+            document.getElementById('pose-instruction').innerText = poseDescriptions[currentPoseStep - 1];
+            let percent = (currentPoseStep / totalPoses) * 100;
+            document.getElementById('progress-text').innerText = `Progress Sampel: ${currentPoseStep} / ${totalPoses}`;
+            document.getElementById('progress-percentage').innerText = `${Math.round(percent)}%`;
+            document.getElementById('progress-bar').style.width = `${percent}%`;
+
+            if(currentPoseStep === totalPoses) {
+                document.getElementById('btn-capture').innerHTML = `<i class="fa-solid fa-check"></i> <span>Simpan & Selesaikan</span>`;
+            }
+        }
+
+        function resetRegistration() {
+            currentPoseStep = 1;
+            registeredFaceDescriptors = [];
+            document.getElementById('btn-capture').innerHTML = `<i class="fa-solid fa-camera"></i> <span>Ambil Sampel Pose Ini</span>`;
+            updateRegistrationUI();
+        }
+    </script>
+</body>
+</html>
