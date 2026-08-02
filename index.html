@@ -222,6 +222,39 @@
             }
         }
 
+        // Fungsi Auto-generate User ID berikutnya (U001 -> U002 dst)
+        function generateNextUserId() {
+            const regIdInput = document.getElementById('reg-id');
+            
+            // Jika database belum ada data sama sekali, biarkan kosong agar bisa diisi manual
+            if (!registeredFaceDatabase || registeredFaceDatabase.length === 0) {
+                regIdInput.value = ""; 
+                return;
+            }
+
+            let maxNum = 0;
+            registeredFaceDatabase.forEach(person => {
+                if (person.id) {
+                    // Deteksi pola awalan huruf "U" diikuti angka (misal: U001, U02)
+                    const match = String(person.id).trim().match(/^U(\d+)$/i);
+                    if (match) {
+                        const num = parseInt(match[1], 10);
+                        if (num > maxNum) maxNum = num;
+                    }
+                }
+            });
+
+            // Jika ditemukan format "U...", buatkan ID otomatis berikutnya
+            if (maxNum > 0) {
+                const nextNum = maxNum + 1;
+                // Format angka menjadi 3 digit (contoh: 2 -> U002, 12 -> U012)
+                regIdInput.value = 'U' + String(nextNum).padStart(3, '0');
+            } else {
+                // Jika ID di sheet menggunakan format lain, biarkan ditulis manual
+                regIdInput.value = ""; 
+            }
+        }
+        
         // Geolocation Check (Selalu mengizinkan absensi)
         function checkLocation() {
             const statusText = document.getElementById('gps-status-text');
