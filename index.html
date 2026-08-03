@@ -75,8 +75,8 @@
                 <canvas id="overlay-canvas" class="absolute inset-0 w-full h-full object-cover transform -scale-x-100"></canvas>
                 
                 <div class="absolute inset-0 border-[30px] border-black/40 pointer-events-none flex items-center justify-center">
-                    <div class="w-48 h-64 border-2 border-dashed border-brand-success rounded-full animate-pulse flex items-center justify-center">
-                        <span id="scan-status-label" class="text-xs bg-black/60 px-2 py-1 rounded text-brand-success font-mono">Posisikan Wajah</span>
+                    <div class="w-64 h-64 border-2 border-dashed border-brand-success rounded-full animate-pulse flex items-center justify-center p-2 text-center">
+                        <span id="scan-status-label" class="text-xs bg-black/70 px-3 py-1.5 rounded text-brand-success font-mono font-semibold">Posisikan Wajah</span>
                     </div>
                 </div>
             </div>
@@ -175,7 +175,7 @@
     <!-- JAVASCRIPT LOGIC -->
     <script>
         // URL Apps Script Web App (Pastikan ganti dengan URL /exec Anda)
-        const API_URL = "https://script.google.com/macros/s/AKfycbyxVwkFVeslnWJXLswbU9Cy7CjhOiOHMVPWsbkJjNHkHyDFqkD4X41JD5jg696m5pSh/exec";
+        const API_URL = "https://script.google.com/macros/s/AKfycbx6i8VfX1eji5cqhujfexRsL8ECURNCaY9l5GfZTqgAsv6x88Hwwta24iUhTFoY0bgE/exec";
 
         // CDN Model Face-API.js
         const MODEL_URL = "https://justadudewhohacks.github.io/face-api.js/models";
@@ -188,9 +188,11 @@
         let activeStream = null;
         let modelsLoaded = false;
         let currentGpsData = "Tidak Terdeteksi";
+        let currentDistanceMeters = 0; // Menyimpan jarak dalam meter
         let attendanceStatus = "Di Luar Wilayah Kerja";
         let detectInterval;
         let registeredFaceDatabase = [];
+        let hasSpokenVerified = false; // Flag agar suara "verified" tidak berulang terus-menerus
 
         // Jam Real-time
         setInterval(() => {
@@ -199,6 +201,18 @@
             const dateString = String(now.getDate()).padStart(2, '0') + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + now.getFullYear();
             document.getElementById('real-time-clock').innerText = `${timeString} | ${dateString}`;
         }, 1000);
+
+        // Fungsi Membunyikan Suara AI "Verified"
+        function playVerifiedSound() {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel(); // Hentikan suara sebelumnya jika ada
+                const utterance = new SpeechSynthesisUtterance("Verified");
+                utterance.lang = "en-US";
+                utterance.pitch = 1.0;
+                utterance.rate = 0.9;
+                window.speechSynthesis.speak(utterance);
+            }
+        }
 
         // Load Model AI dari CDN Cloud
         async function loadFaceModels() {
@@ -228,37 +242,27 @@
             }
         }
 
-        // Fungsi Auto-generate User ID berikutnya (Versi Diperbaiki & Fleksibel)
+        // Fungsi Auto-generate User ID berikutnya
         function generateNextUserId() {
             const regIdInput = document.getElementById('reg-id');
-            
-            // Jika database kosong, beri nilai default U001
             if (!registeredFaceDatabase || registeredFaceDatabase.length === 0) {
                 regIdInput.value = "U001"; 
                 return;
             }
 
             let maxNum = 0;
-
             registeredFaceDatabase.forEach(person => {
-                // Toleransi berbagai format key dari Apps Script (id, ID, userId, dll)
                 const rawId = person.id || person.ID || person.userId || person.User_ID || (Array.isArray(person) ? person[0] : null);
-                
                 if (rawId) {
                     const strId = String(rawId).trim();
-                    // Ambil angka saja dari string ID (contoh: "U001" -> 1, "U-02" -> 2, "15" -> 15)
                     const extractedNum = strId.replace(/\D/g, ''); 
-                    
                     if (extractedNum) {
                         const num = parseInt(extractedNum, 10);
-                        if (!isNaN(num) && num > maxNum) {
-                            maxNum = num;
-                        }
+                        if (!isNaN(num) && num > maxNum) maxNum = num;
                     }
                 }
             });
 
-            // Buatkan ID otomatis berikutnya (Format 3 Digit: U001, U002, dst)
             if (maxNum > 0) {
                 const nextNum = maxNum + 1;
                 regIdInput.value = 'U' + String(nextNum).padStart(3, '0');
@@ -267,7 +271,7 @@
             }
         }
 
-        // Geolocation Check (Selalu mengizinkan absensi)
+        // Geolocation Check
         function checkLocation() {
             const statusText = document.getElementById('gps-status-text');
             const btnAbsen = document.getElementById('btn-proses-absen');
@@ -277,6 +281,7 @@
             if (!navigator.geolocation) {
                 statusText.innerHTML = `<span class="text-yellow-400 font-medium">GPS Tidak Didukung</span>`;
                 currentGpsData = "Tidak Terdeteksi";
+                currentDistanceMeters = 0;
                 attendanceStatus = "Di Luar Wilayah Kerja";
                 return;
             }
@@ -290,17 +295,19 @@
                     currentGpsData = `${userLat}, ${userLng}`;
 
                     const distance = calculateDistance(OFFICE_LAT, OFFICE_LNG, userLat, userLng);
+                    currentDistanceMeters = Math.round(distance);
                     
                     if (distance <= MAX_RADIUS_METERS) {
                         attendanceStatus = "Hadir";
-                        statusText.innerHTML = `<span class="text-brand-success font-medium">Dalam Radius (${Math.round(distance)}m)</span>`;
+                        statusText.innerHTML = `<span class="text-brand-success font-medium">Dalam Radius (${currentDistanceMeters} meter)</span>`;
                     } else {
                         attendanceStatus = "Di Luar Wilayah Kerja";
-                        statusText.innerHTML = `<span class="text-yellow-400 font-medium">Di Luar Radius (${Math.round(distance)}m)</span>`;
+                        statusText.innerHTML = `<span class="text-yellow-400 font-medium">Di Luar Radius (${currentDistanceMeters} meter)</span>`;
                     }
                 },
                 (error) => {
                     currentGpsData = "GPS Tidak Aktif";
+                    currentDistanceMeters = 0;
                     attendanceStatus = "Di Luar Wilayah Kerja";
                     statusText.innerHTML = `<span class="text-yellow-400 font-medium">GPS Off / Tidak Terdeteksi</span>`;
                 },
@@ -326,6 +333,7 @@
             document.getElementById(viewId).classList.remove('hidden');
 
             stopCamera();
+            hasSpokenVerified = false; // Reset status suara
             
             if (viewId === 'view-faceprint') {
                 if (!modelsLoaded) { alert("Model AI sedang dimuat dari server, mohon tunggu sebentar..."); switchView('view-home'); return; }
@@ -338,8 +346,6 @@
                 if (!modelsLoaded) { alert("Model AI sedang dimuat dari server, mohon tunggu sebentar..."); switchView('view-home'); return; }
                 startCamera('reg-video-feed');
                 resetRegistration();
-                
-                // Ambil database terbaru secara async terlebih dahulu, lalu generate ID berikutnya
                 fetchFaceDatabase().then(() => {
                     generateNextUserId();
                 });
@@ -365,7 +371,7 @@
             if(detectInterval) clearInterval(detectInterval);
         }
 
-        // Face Detection & Matching (Optimized Version)
+        // Face Detection & Matching
         async function startFaceDetection(videoId, canvasId) {
             const video = document.getElementById(videoId);
             const canvas = document.getElementById(canvasId);
@@ -408,12 +414,20 @@
 
                         if (bestMatch.distance < 0.60) {
                             ctx.strokeStyle = '#10b981';
-                            statusLabel.innerText = `Terdeteksi: ${bestMatch.name}`;
+                            // Tampilkan tulisan Terdeteksi + User ID + Nama
+                            statusLabel.innerText = `Terdeteksi: [${bestMatch.id}] ${bestMatch.name}`;
                             window.matchedUser = bestMatch;
+
+                            // Bunyikan suara AI "Verified" satu kali
+                            if (!hasSpokenVerified) {
+                                playVerifiedSound();
+                                hasSpokenVerified = true;
+                            }
                         } else {
                             ctx.strokeStyle = '#ef4444';
                             statusLabel.innerText = "Wajah Tidak Dikenal";
                             window.matchedUser = null;
+                            hasSpokenVerified = false;
                         }
 
                         ctx.lineWidth = 3;
@@ -425,9 +439,11 @@
                         ctx.strokeRect(box.x, box.y, box.width, box.height);
                         statusLabel.innerText = "Mencocokkan Database...";
                         window.matchedUser = null;
+                        hasSpokenVerified = false;
                     } else {
                         statusLabel.innerText = "Posisikan Wajah";
                         window.matchedUser = null;
+                        hasSpokenVerified = false;
                     }
                 } catch (err) {
                     console.error("Error AI detection:", err);
@@ -456,12 +472,13 @@
                         id: window.matchedUser.id,
                         name: window.matchedUser.name,
                         gps: currentGpsData,
+                        radius: `${currentDistanceMeters} meter`, // Tambahan data radius ke Google Sheets
                         status: attendanceStatus
                     })
                 });
                 
                 const result = await response.json();
-                alert(`Absensi Berhasil!\nNama: ${window.matchedUser.name}\nStatus: ${attendanceStatus}`);
+                alert(`Absensi Berhasil!\nID: ${window.matchedUser.id}\nNama: ${window.matchedUser.name}\nJarak: ${currentDistanceMeters} meter\nStatus: ${attendanceStatus}`);
                 switchView('view-home');
             } catch (err) {
                 alert("Gagal mengirim absensi. Pastikan koneksi internet aktif.");
@@ -497,7 +514,7 @@
                     alert(result.message);
                 }
             } catch (err) {
-                alert("Kesalahan koneksi ke database server. Periksa kembali API_URL dan otorisasi Apps Script.");
+                alert("Kesalahan koneksi ke database server.");
             } finally {
                 btn.innerText = "Masuk ke Pendaftaran";
                 btn.disabled = false;
@@ -555,7 +572,6 @@
                     });
                     alert("Pendaftaran wajah berhasil disimpan ke database!");
                     
-                    // Reset input nama, perbarui database & buat ID urutan berikutnya secara otomatis
                     nameInput.value = '';
                     await fetchFaceDatabase();
                     generateNextUserId();
