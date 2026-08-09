@@ -186,7 +186,8 @@
         const MAX_RADIUS_METERS = 500;
 
         // Distance Threshold: Semakin kecil nilainya (misal 0.45 - 0.48), semakin akurat/ketat
-        const FACE_MATCH_THRESHOLD = 0.48;
+        // Nilai lebih besar membuat pencocokan wajah lebih longgar.
+        const FACE_MATCH_THRESHOLD = 0.60;
 
         let activeStream = null;
         let modelsLoaded = false;
@@ -435,7 +436,7 @@
                     // Draw scaled frame to offscreen canvas
                     offCtx.drawImage(video, 0, 0, offCanvas.width, offCanvas.height);
 
-                    const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 });
+                    const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.35 });
                     const detection = await faceapi.detectSingleFace(offCanvas, options)
                         .withFaceLandmarks()
                         .withFaceDescriptor();
