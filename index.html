@@ -215,11 +215,12 @@
 
         // Suara AI "Verified"
         function playVerifiedSound() {
+            if (hasSpokenVerified) return;
             const now = Date.now();
             if (now - lastSpokenTime < 2000) return; // debounce: 2s
+            if ('speechSynthesis' in window && (window.speechSynthesis.speaking || window.speechSynthesis.pending)) return;
             lastSpokenTime = now;
             if ('speechSynthesis' in window) {
-                window.speechSynthesis.cancel();
                 const utterance = new SpeechSynthesisUtterance("Verified");
                 utterance.lang = "en-US";
                 utterance.pitch = 1.0;
@@ -486,10 +487,8 @@
                         ctx.lineWidth = 2;
                         ctx.strokeRect(box.x * scaleX, box.y * scaleY, box.width * scaleX, box.height * scaleY);
                         statusLabel.innerText = "Database Kosong / Mencocokkan...";
-                        window.matchedUser = null;
                     } else {
                         statusLabel.innerText = "Posisikan Wajah";
-                        window.matchedUser = null;
                     }
 
                     // Adaptive FPS: if processing is slow, reduce targetFps; if fast, slowly increase
