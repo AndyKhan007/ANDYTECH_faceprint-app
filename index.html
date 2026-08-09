@@ -474,7 +474,6 @@
                             ctx.strokeStyle = '#ef4444';
                             statusLabel.innerText = "Wajah Tidak Dikenal";
                             window.matchedUser = null;
-                            hasSpokenVerified = false;
                         }
 
                         ctx.lineWidth = 3;
@@ -488,11 +487,9 @@
                         ctx.strokeRect(box.x * scaleX, box.y * scaleY, box.width * scaleX, box.height * scaleY);
                         statusLabel.innerText = "Database Kosong / Mencocokkan...";
                         window.matchedUser = null;
-                        hasSpokenVerified = false;
                     } else {
                         statusLabel.innerText = "Posisikan Wajah";
                         window.matchedUser = null;
-                        hasSpokenVerified = false;
                     }
 
                     // Adaptive FPS: if processing is slow, reduce targetFps; if fast, slowly increase
