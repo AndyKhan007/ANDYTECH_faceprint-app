@@ -175,7 +175,7 @@
     <!-- JAVASCRIPT LOGIC -->
     <script>
         // URL Apps Script Web App (Sudah terhubung ke deployment Apps Script Anda)
-        const API_URL = "https://script.google.com/macros/s/AKfycbxPUByVyqlKKGzJsgjkH8yGvzWYeK2_VmgKudoHy0E/exec";
+        const API_URL = "https://script.google.com/macros/s/AKfycbzof8u-Nhey95LvhUkzJElzOYXYh3UYGl_Qa_OLZRN4SSzJxFkuKaHfC3TpTEF7h24w/exec";
 
         // CDN Model Face-API.js
         const MODEL_URL = "https://justadudewhohacks.github.io/face-api.js/models";
@@ -239,16 +239,49 @@
         window.addEventListener('load', loadFaceModels);
 
         // Fetch Database Wajah & Inisialisasi FaceMatcher
+        // Fetch Database Wajah & Inisialisasi FaceMatcher
         async function fetchFaceDatabase() {
             if (!isApiConfigured()) {
                 registeredFaceDatabase = [];
                 faceMatcher = null;
-                return;
+                return false;
             }
+
             try {
-                const response = await fetch(API_URL, {
-                    headers: { "Content-Type": "application/json" }
+                const validationResponse = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ action: 'validate' })
                 });
+
+                if (!validationResponse.ok) {
+                    throw new Error(`HTTP ${validationResponse.status}`);
+                }
+
+                const validationJson = await validationResponse.json();
+                if (validationJson.status !== 'success') {
+                    throw new Error('Validasi Google Sheets gagal');
+                }
+
+                const validation = validationJson.validation || {};
+                const invalidSheets = Object.entries(validation).filter(([, value]) => !value.ok);
+                if (invalidSheets.length > 0) {
+                    const messages = invalidSheets.map(([key, value]) => `${key}: ${value.reason}`).join('\n');
+                    alert(`Validasi Google Sheets gagal:\n${messages}`);
+                    registeredFaceDatabase = [];
+                    faceMatcher = null;
+                    return false;
+                }
+            } catch (err) {
+                console.error("Gagal memvalidasi Google Sheets:", err);
+                alert("Tidak dapat memvalidasi Google Sheets. Periksa konfigurasi API dan data Google Sheets.");
+                registeredFaceDatabase = [];
+                faceMatcher = null;
+                return false;
+            }
+
+            try {
+                const response = await fetch(API_URL);
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}`);
                 }
@@ -282,10 +315,13 @@
                 } else {
                     faceMatcher = null;
                 }
+                return true;
             } catch (err) {
                 console.error("Gagal mengambil database wajah:", err);
+                alert("Gagal mengambil database wajah. Pastikan Apps Script Web App dan Google Sheets berfungsi.");
                 registeredFaceDatabase = [];
                 faceMatcher = null;
+                return false;
             }
         }
 
@@ -388,17 +424,21 @@
             
             if (viewId === 'view-faceprint') {
                 if (!modelsLoaded) { alert("Model AI sedang dimuat dari server, mohon tunggu sebentar..."); switchView('view-home'); return; }
+                if (!isApiConfigured()) { alert("API_URL belum diatur."); switchView('view-home'); return; }
                 await fetchFaceDatabase();
+                if (!faceMatcher && registeredFaceDatabase.length === 0) return;
                 const started = await startCamera('video-feed');
                 if (!started) return;
                 checkLocation();
                 startFaceDetection('video-feed', 'overlay-canvas');
             } else if (viewId === 'view-registration') {
                 if (!modelsLoaded) { alert("Model AI sedang dimuat dari server, mohon tunggu sebentar..."); switchView('view-home'); return; }
+                if (!isApiConfigured()) { alert("API_URL belum diatur."); switchView('view-home'); return; }
                 const started = await startCamera('reg-video-feed');
                 if (!started) return;
                 resetRegistration();
                 await fetchFaceDatabase();
+                if (!isApiConfigured()) return;
                 generateNextUserId();
             }
         }
@@ -648,7 +688,7 @@
             const video = document.getElementById('reg-video-feed');
             const detections = await faceapi.detectAllFaces(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
                     .withFaceLandmarks()
-                    .withFaceDescriptor();
+                    .withFaceDescriptors();
 
             if (!detections || detections.length === 0) {
                 alert("Wajah tidak terdeteksi jelas! Pastikan pencahayaan cukup dan wajah terlihat lurus ke kamera.");
