@@ -193,10 +193,16 @@
         let currentGpsData = "Tidak Terdeteksi";
         let currentDistanceMeters = 0;
         let attendanceStatus = "Di Luar Wilayah Kerja";
-        let detectInterval;
+        let detectAnimationId = null; // requestAnimationFrame id
         let registeredFaceDatabase = [];
         let faceMatcher = null; // Instance FaceMatcher resmi dari face-api.js
         let hasSpokenVerified = false;
+        let lastSpokenTime = 0; // debounce for voice
+        let lastAbsenTime = 0; // rate-limit for absen
+        let targetFps = 8; // starting target FPS for detection loop
+        const MIN_FPS = 4;
+        const MAX_FPS = 12;
+        let lastProcessTime = 0;
 
         // Jam Real-time
         setInterval(() => {
@@ -208,6 +214,9 @@
 
         // Suara AI "Verified"
         function playVerifiedSound() {
+            const now = Date.now();
+            if (now - lastSpokenTime < 2000) return; // debounce: 2s
+            lastSpokenTime = now;
             if ('speechSynthesis' in window) {
                 window.speechSynthesis.cancel();
                 const utterance = new SpeechSynthesisUtterance("Verified");
@@ -236,7 +245,7 @@
 
         // Fetch Database Wajah & Inisialisasi FaceMatcher
         async function fetchFaceDatabase() {
-            if (!API_URL || API_URL === "https://script.google.com/macros/s/AKfycbwJPbuPpg1-2-_fEwq7gsemgRPF1GO4U2QHIjVz4Isn3Be2cgxPgGR2Vc4Zrgh0mzQM/exec") return;
+            if (!API_URL || API_URL === "MASUKKAN_URL_WEB_APP_ANDA_DISINI") return;
             try {
                 const response = await fetch(API_URL);
                 const data = await response.json();
@@ -388,7 +397,10 @@
                 activeStream.getTracks().forEach(track => track.stop());
                 activeStream = null;
             }
-            if(detectInterval) clearInterval(detectInterval);
+            if (detectAnimationId) {
+                cancelAnimationFrame(detectAnimationId);
+                detectAnimationId = null;
+            }
         }
 
         // Deteksi & Pencocokan Wajah yang Diperbaiki
@@ -398,29 +410,51 @@
             const displaySize = { width: video.videoWidth || 640, height: video.videoHeight || 480 };
             faceapi.matchDimensions(canvas, displaySize);
 
-            let isProcessing = false;
+            // Offscreen smaller canvas to reduce processing cost
+            const offCanvas = document.createElement('canvas');
+            offCanvas.width = 320;
+            offCanvas.height = 240;
+            const offCtx = offCanvas.getContext('2d');
 
-            detectInterval = setInterval(async () => {
-                if(video.paused || video.ended || isProcessing) return;
-                
+            let isProcessing = false;
+            let lastFrameTime = performance.now();
+
+            const processLoop = async (now) => {
+                detectAnimationId = requestAnimationFrame(processLoop);
+
+                const elapsed = now - lastFrameTime;
+                const interval = 1000 / targetFps;
+                if (elapsed < interval) return; // throttle by target FPS
+                lastFrameTime = now;
+
+                if (video.paused || video.ended || isProcessing) return;
                 isProcessing = true;
 
+                const startProc = Date.now();
                 try {
-                    // Ditingkatkan minConfidence ke 0.5 agar hanya memproses wajah yang jelas
+                    // Draw scaled frame to offscreen canvas
+                    offCtx.drawImage(video, 0, 0, offCanvas.width, offCanvas.height);
+
                     const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 });
-                    const detection = await faceapi.detectSingleFace(video, options)
+                    const detection = await faceapi.detectSingleFace(offCanvas, options)
                         .withFaceLandmarks()
                         .withFaceDescriptor();
 
                     const ctx = canvas.getContext('2d');
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
                     const statusLabel = document.getElementById('scan-status-label');
 
                     if (detection && faceMatcher) {
-                        const box = faceapi.resizeResults(detection, displaySize).detection.box;
-                        
-                        // Gunakan FaceMatcher resmi dari Face-API.js
+                        const box = detection.detection.box; // relative to offCanvas
+                        const scaleX = displaySize.width / offCanvas.width;
+                        const scaleY = displaySize.height / offCanvas.height;
+                        const drawBox = {
+                            x: box.x * scaleX,
+                            y: box.y * scaleY,
+                            width: box.width * scaleX,
+                            height: box.height * scaleY
+                        };
+
                         const bestMatch = faceMatcher.findBestMatch(detection.descriptor);
 
                         if (bestMatch.label !== 'unknown') {
@@ -443,12 +477,14 @@
                         }
 
                         ctx.lineWidth = 3;
-                        ctx.strokeRect(box.x, box.y, box.width, box.height);
+                        ctx.strokeRect(drawBox.x, drawBox.y, drawBox.width, drawBox.height);
                     } else if (detection) {
-                        const box = faceapi.resizeResults(detection, displaySize).detection.box;
+                        const box = detection.detection.box;
+                        const scaleX = displaySize.width / offCanvas.width;
+                        const scaleY = displaySize.height / offCanvas.height;
                         ctx.strokeStyle = '#3b82f6';
                         ctx.lineWidth = 2;
-                        ctx.strokeRect(box.x, box.y, box.width, box.height);
+                        ctx.strokeRect(box.x * scaleX, box.y * scaleY, box.width * scaleX, box.height * scaleY);
                         statusLabel.innerText = "Database Kosong / Mencocokkan...";
                         window.matchedUser = null;
                         hasSpokenVerified = false;
@@ -457,12 +493,23 @@
                         window.matchedUser = null;
                         hasSpokenVerified = false;
                     }
+
+                    // Adaptive FPS: if processing is slow, reduce targetFps; if fast, slowly increase
+                    const procTime = Date.now() - startProc;
+                    if (procTime > interval && targetFps > MIN_FPS) {
+                        targetFps = Math.max(MIN_FPS, Math.floor(targetFps * 0.85));
+                    } else if (procTime < interval * 0.6 && targetFps < MAX_FPS) {
+                        targetFps = Math.min(MAX_FPS, targetFps + 1);
+                    }
+
                 } catch (err) {
                     console.error("Error AI detection:", err);
                 } finally {
                     isProcessing = false;
                 }
-            }, 300);
+            };
+
+            detectAnimationId = requestAnimationFrame(processLoop);
         }
 
         // Kirim Absen ke Google Sheets
