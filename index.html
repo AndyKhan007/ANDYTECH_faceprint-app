@@ -216,10 +216,14 @@
         // Suara AI "Verified"
         function playVerifiedSound() {
             if (hasSpokenVerified) return;
+            if ('speechSynthesis' in window && (window.speechSynthesis.speaking || window.speechSynthesis.pending)) {
+                hasSpokenVerified = true;
+                return;
+            }
             const now = Date.now();
             if (now - lastSpokenTime < 2000) return; // debounce: 2s
-            if ('speechSynthesis' in window && (window.speechSynthesis.speaking || window.speechSynthesis.pending)) return;
             lastSpokenTime = now;
+            hasSpokenVerified = true;
             if ('speechSynthesis' in window) {
                 const utterance = new SpeechSynthesisUtterance("Verified");
                 utterance.lang = "en-US";
