@@ -175,24 +175,28 @@
     <!-- JAVASCRIPT LOGIC -->
     <script>
         // URL Apps Script Web App (Pastikan ganti dengan URL /exec Anda)
-        const API_URL = "https://script.google.com/macros/s/AKfycbx6i8VfX1eji5cqhujfexRsL8ECURNCaY9l5GfZTqgAsv6x88Hwwta24iUhTFoY0bgE/exec";
+        const API_URL = "MASUKKAN_URL_WEB_APP_ANDA_DISINI";
 
         // CDN Model Face-API.js
         const MODEL_URL = "https://justadudewhohacks.github.io/face-api.js/models";
 
         // Konfigurasi Lokasi Kantor
-        const OFFICE_LAT = 5.350433995757128;
-        const OFFICE_LNG = 100.30360072954902;
+        const OFFICE_LAT = -6.200000;
+        const OFFICE_LNG = 106.816666;
         const MAX_RADIUS_METERS = 500;
+
+        // Distance Threshold: Semakin kecil nilainya (misal 0.45 - 0.48), semakin akurat/ketat
+        const FACE_MATCH_THRESHOLD = 0.48;
 
         let activeStream = null;
         let modelsLoaded = false;
         let currentGpsData = "Tidak Terdeteksi";
-        let currentDistanceMeters = 0; // Menyimpan jarak dalam meter
+        let currentDistanceMeters = 0;
         let attendanceStatus = "Di Luar Wilayah Kerja";
         let detectInterval;
         let registeredFaceDatabase = [];
-        let hasSpokenVerified = false; // Flag agar suara "verified" tidak berulang terus-menerus
+        let faceMatcher = null; // Instance FaceMatcher resmi dari face-api.js
+        let hasSpokenVerified = false;
 
         // Jam Real-time
         setInterval(() => {
@@ -202,10 +206,10 @@
             document.getElementById('real-time-clock').innerText = `${timeString} | ${dateString}`;
         }, 1000);
 
-        // Fungsi Membunyikan Suara AI "Verified"
+        // Suara AI "Verified"
         function playVerifiedSound() {
             if ('speechSynthesis' in window) {
-                window.speechSynthesis.cancel(); // Hentikan suara sebelumnya jika ada
+                window.speechSynthesis.cancel();
                 const utterance = new SpeechSynthesisUtterance("Verified");
                 utterance.lang = "en-US";
                 utterance.pitch = 1.0;
@@ -214,7 +218,7 @@
             }
         }
 
-        // Load Model AI dari CDN Cloud
+        // Load Model AI
         async function loadFaceModels() {
             try {
                 console.log("Memuat model AI dari CDN Cloud...");
@@ -230,19 +234,34 @@
         }
         window.addEventListener('load', loadFaceModels);
 
-        // Fetch Database Wajah untuk Absensi
+        // Fetch Database Wajah & Inisialisasi FaceMatcher
         async function fetchFaceDatabase() {
             if (!API_URL || API_URL === "MASUKKAN_URL_WEB_APP_ANDA_DISINI") return;
             try {
                 const response = await fetch(API_URL);
                 const data = await response.json();
                 registeredFaceDatabase = data;
+
+                if (registeredFaceDatabase && registeredFaceDatabase.length > 0) {
+                    const labeledDescriptors = registeredFaceDatabase.map(person => {
+                        const descriptorsList = person.descriptors.map(desc => {
+                            const parsedDesc = typeof desc === 'string' ? JSON.parse(desc) : desc;
+                            return new Float32Array(Object.values(parsedDesc));
+                        });
+                        return new faceapi.LabeledFaceDescriptors(`${person.id}|${person.name}`, descriptorsList);
+                    });
+
+                    // Inisialisasi FaceMatcher dengan Threshold Ketat (0.48)
+                    faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, FACE_MATCH_THRESHOLD);
+                } else {
+                    faceMatcher = null;
+                }
             } catch (err) {
                 console.error("Gagal mengambil database wajah:", err);
             }
         }
 
-        // Fungsi Auto-generate User ID berikutnya
+        // Auto-generate User ID
         function generateNextUserId() {
             const regIdInput = document.getElementById('reg-id');
             if (!registeredFaceDatabase || registeredFaceDatabase.length === 0) {
@@ -333,14 +352,15 @@
             document.getElementById(viewId).classList.remove('hidden');
 
             stopCamera();
-            hasSpokenVerified = false; // Reset status suara
+            hasSpokenVerified = false;
             
             if (viewId === 'view-faceprint') {
                 if (!modelsLoaded) { alert("Model AI sedang dimuat dari server, mohon tunggu sebentar..."); switchView('view-home'); return; }
-                fetchFaceDatabase();
-                startCamera('video-feed').then(() => {
-                    checkLocation();
-                    startFaceDetection('video-feed', 'overlay-canvas');
+                fetchFaceDatabase().then(() => {
+                    startCamera('video-feed').then(() => {
+                        checkLocation();
+                        startFaceDetection('video-feed', 'overlay-canvas');
+                    });
                 });
             } else if (viewId === 'view-registration') {
                 if (!modelsLoaded) { alert("Model AI sedang dimuat dari server, mohon tunggu sebentar..."); switchView('view-home'); return; }
@@ -371,7 +391,7 @@
             if(detectInterval) clearInterval(detectInterval);
         }
 
-        // Face Detection & Matching
+        // Deteksi & Pencocokan Wajah yang Diperbaiki
         async function startFaceDetection(videoId, canvasId) {
             const video = document.getElementById(videoId);
             const canvas = document.getElementById(canvasId);
@@ -386,7 +406,8 @@
                 isProcessing = true;
 
                 try {
-                    const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.4 });
+                    // Ditingkatkan minConfidence ke 0.5 agar hanya memproses wajah yang jelas
+                    const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 });
                     const detection = await faceapi.detectSingleFace(video, options)
                         .withFaceLandmarks()
                         .withFaceDescriptor();
@@ -396,29 +417,20 @@
 
                     const statusLabel = document.getElementById('scan-status-label');
 
-                    if (detection && registeredFaceDatabase.length > 0) {
+                    if (detection && faceMatcher) {
                         const box = faceapi.resizeResults(detection, displaySize).detection.box;
-                        let bestMatch = { label: "unknown", distance: 1.0 };
                         
-                        for (let person of registeredFaceDatabase) {
-                            for (let desc of person.descriptors) {
-                                let parsedDesc = typeof desc === 'string' ? JSON.parse(desc) : desc;
-                                const storedDesc = new Float32Array(Object.values(parsedDesc));
-                                
-                                const distance = faceapi.euclideanDistance(detection.descriptor, storedDesc);
-                                if (distance < bestMatch.distance) {
-                                    bestMatch = { id: person.id, name: person.name, distance: distance };
-                                }
-                            }
-                        }
+                        // Gunakan FaceMatcher resmi dari Face-API.js
+                        const bestMatch = faceMatcher.findBestMatch(detection.descriptor);
 
-                        if (bestMatch.distance < 0.60) {
+                        if (bestMatch.label !== 'unknown') {
+                            const [id, name] = bestMatch.label.split('|');
+                            const similarity = Math.round((1 - bestMatch.distance) * 100);
+
                             ctx.strokeStyle = '#10b981';
-                            // Tampilkan tulisan Terdeteksi + User ID + Nama
-                            statusLabel.innerText = `Terdeteksi: [${bestMatch.id}] ${bestMatch.name}`;
-                            window.matchedUser = bestMatch;
+                            statusLabel.innerText = `Terdeteksi: [${id}] ${name} (${similarity}%)`;
+                            window.matchedUser = { id, name, distance: bestMatch.distance };
 
-                            // Bunyikan suara AI "Verified" satu kali
                             if (!hasSpokenVerified) {
                                 playVerifiedSound();
                                 hasSpokenVerified = true;
@@ -437,7 +449,7 @@
                         ctx.strokeStyle = '#3b82f6';
                         ctx.lineWidth = 2;
                         ctx.strokeRect(box.x, box.y, box.width, box.height);
-                        statusLabel.innerText = "Mencocokkan Database...";
+                        statusLabel.innerText = "Database Kosong / Mencocokkan...";
                         window.matchedUser = null;
                         hasSpokenVerified = false;
                     } else {
@@ -472,7 +484,7 @@
                         id: window.matchedUser.id,
                         name: window.matchedUser.name,
                         gps: currentGpsData,
-                        radius: `${currentDistanceMeters} meter`, // Tambahan data radius ke Google Sheets
+                        radius: `${currentDistanceMeters} meter`,
                         status: attendanceStatus
                     })
                 });
@@ -544,11 +556,11 @@
             if(!id || !name) { alert("Isi User ID dan Nama Lengkap terlebih dahulu!"); return; }
             
             const video = document.getElementById('reg-video-feed');
-            const detection = await faceapi.detectSingleFace(video, new faceapi.SsdMobilenetv1Options())
+            const detection = await faceapi.detectSingleFace(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
                     .withFaceLandmarks()
                     .withFaceDescriptor();
                     
-            if(!detection) { alert("Wajah tidak terdeteksi! Pastikan wajah terlihat jelas di kamera."); return; }
+            if(!detection) { alert("Wajah tidak terdeteksi jelas! Pastikan pencahayaan cukup dan wajah terlihat lurus ke kamera."); return; }
             
             registeredFaceDescriptors.push(Array.from(detection.descriptor));
 
