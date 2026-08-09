@@ -216,7 +216,7 @@
         // Suara AI "Verified"
         function playVerifiedSound() {
             if (hasSpokenVerified) return;
-            if ('speechSynthesis' in window && (window.speechSynthesis.speaking || window.speechSynthesis.pending)) {
+            if (!('speechSynthesis' in window)) {
                 hasSpokenVerified = true;
                 return;
             }
@@ -224,13 +224,12 @@
             if (now - lastSpokenTime < 2000) return; // debounce: 2s
             lastSpokenTime = now;
             hasSpokenVerified = true;
-            if ('speechSynthesis' in window) {
-                const utterance = new SpeechSynthesisUtterance("Verified");
-                utterance.lang = "en-US";
-                utterance.pitch = 1.0;
-                utterance.rate = 0.9;
-                window.speechSynthesis.speak(utterance);
-            }
+            if (window.speechSynthesis.speaking || window.speechSynthesis.pending) return;
+            const utterance = new SpeechSynthesisUtterance("Verified");
+            utterance.lang = "en-US";
+            utterance.pitch = 1.0;
+            utterance.rate = 0.9;
+            window.speechSynthesis.speak(utterance);
         }
 
         // Load Model AI
