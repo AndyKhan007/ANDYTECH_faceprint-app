@@ -231,13 +231,13 @@
 
             stopAllAudio();
 
-            const textEnglish = "Status, Verified"; 
+            const textEnglish = "Verified"; 
             const textIndonesian = `Terima kasih, ${userName}.,selamat bekerja`;
 
             if (typeof responsiveVoice !== 'undefined' && responsiveVoice.voiceSupport()) {
-                responsiveVoice.speak(textEnglish, "UK English Female", {
+                responsiveVoice.speak(textEnglish, "US English Female", {
                     pitch: 1,
-                    rate: 0.50,
+                    rate: 0.35,
                     onend: function() {
                         if (userName && isDetecting) {
                             ttsTimeoutId = setTimeout(() => {
@@ -255,7 +255,7 @@
                 if (userName && isDetecting) {
                     ttsTimeoutId = setTimeout(() => {
                         speakNativeFallback(textIndonesian, 'id-ID');
-                    }, 1000);
+                    }, 1250);
                 }
             }
         }
