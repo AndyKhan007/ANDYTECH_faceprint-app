@@ -174,13 +174,19 @@
 
     <!-- JAVASCRIPT LOGIC -->
     <script>
-        // URL Apps Script Web App (Pastikan ganti dengan URL /exec Anda)
+        // URL Apps Script Web App
         const API_URL = "https://script.google.com/macros/s/AKfycbwJPbuPpg1-2-_fEwq7gsemgRPF1GO4U2QHIjVz4Isn3Be2cgxPgGR2Vc4Zrgh0mzQM/exec";
 
         // CDN Model Face-API.js
         const MODEL_URL = "https://justadudewhohacks.github.io/face-api.js/models";
 
-        // Konfigurasi Lokasi Kantor
+        // --- KONFIGURASI AUDIO CDN ---
+        // Anda dapat mengganti URL file MP3 di bawah dengan URL audio AI milik Anda sendiri
+        const AUDIO_VERIFIED_URL = "https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3"; 
+        
+        const audioVerified = new Audio(AUDIO_VERIFIED_URL);
+        audioVerified.preload = "auto"; // Preload otomatis ke memori browser
+
         const OFFICE_LAT = 5.350205443577465;
         const OFFICE_LNG = 100.30359071228548;
         const MAX_RADIUS_METERS = 500;
@@ -195,9 +201,9 @@
         let registeredFaceDatabase = [];
         let faceMatcher = null;
         
-        // --- VARIABEL BARU UNTUK MENGATUR AUDIO (Toleransi Flicker) ---
         let lastRecognizedId = null; 
         let faceLostTimeout = null;
+        let isDetecting = false; // Kill Switch
         
         let targetFps = 8;
         const MIN_FPS = 4;
@@ -211,24 +217,30 @@
             document.getElementById('real-time-clock').innerText = `${timeString} | ${dateString}`;
         }, 1000);
 
-        // Suara AI "Verified" yang 100% Anti-Looping
+        // --- FUNGSI PEMUTAR AUDIO CDN ---
         function playVerifiedSound() {
-            if (!('speechSynthesis' in window)) return;
+            if (!isDetecting) return; // Jangan bersuara jika scanner ditutup
 
-            // Paksa hentikan dan bersihkan SEMUA antrean suara sebelumnya secara instan
-            window.speechSynthesis.cancel(); 
+            // Hentikan dan reset posisi audio jika sedang berjalan
+            audioVerified.pause();
+            audioVerified.currentTime = 0;
 
-            const utterance = new SpeechSynthesisUtterance("Verified");
-            utterance.lang = "en-US";
-            utterance.pitch = 1.0;
-            utterance.rate = 0.9;
-            window.speechSynthesis.speak(utterance);
+            audioVerified.play().catch(err => {
+                console.warn("Autoplay diblokir browser atau file audio gagal dimuat:", err);
+            });
         }
 
-        // Load Model AI
+        // --- FUNGSI PEMATIAN AUDIO INSTAN (Kill Switch Audio) ---
+        function stopAllAudio() {
+            if (audioVerified) {
+                audioVerified.pause();
+                audioVerified.currentTime = 0; // Hentikan total dan balik ke detik 0
+            }
+        }
+
         async function loadFaceModels() {
             try {
-                console.log("Memuat model AI dari CDN Cloud...");
+                console.log("Memuat model AI...");
                 await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
                 await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
                 await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
@@ -236,14 +248,13 @@
                 console.log("Model AI berhasil dimuat!");
             } catch (error) {
                 console.error("Gagal memuat model:", error);
-                alert("Gagal memuat model AI dari server. Pastikan koneksi internet Anda aktif.");
+                alert("Gagal memuat model AI. Pastikan koneksi internet aktif.");
             }
         }
         window.addEventListener('load', loadFaceModels);
 
-        // Fetch Database Wajah & Inisialisasi FaceMatcher
         async function fetchFaceDatabase() {
-            if (!API_URL || API_URL === "MASUKKAN_URL_WEB_APP_ANDA_DISINI") return;
+            if (!API_URL) return;
             try {
                 const response = await fetch(API_URL);
                 const data = await response.json();
@@ -272,50 +283,36 @@
                 regIdInput.value = "U001"; 
                 return;
             }
-
             let maxNum = 0;
             registeredFaceDatabase.forEach(person => {
                 const rawId = person.id || person.ID || person.userId || person.User_ID || (Array.isArray(person) ? person[0] : null);
                 if (rawId) {
-                    const strId = String(rawId).trim();
-                    const extractedNum = strId.replace(/\D/g, ''); 
+                    const extractedNum = String(rawId).trim().replace(/\D/g, ''); 
                     if (extractedNum) {
                         const num = parseInt(extractedNum, 10);
                         if (!isNaN(num) && num > maxNum) maxNum = num;
                     }
                 }
             });
-
-            if (maxNum > 0) {
-                const nextNum = maxNum + 1;
-                regIdInput.value = 'U' + String(nextNum).padStart(3, '0');
-            } else {
-                regIdInput.value = "U001"; 
-            }
+            regIdInput.value = maxNum > 0 ? 'U' + String(maxNum + 1).padStart(3, '0') : "U001";
         }
 
         function checkLocation() {
             const statusText = document.getElementById('gps-status-text');
             const btnAbsen = document.getElementById('btn-proses-absen');
-
             btnAbsen.disabled = false;
 
             if (!navigator.geolocation) {
                 statusText.innerHTML = `<span class="text-yellow-400 font-medium">GPS Tidak Didukung</span>`;
-                currentGpsData = "Tidak Terdeteksi";
-                currentDistanceMeters = 0;
-                attendanceStatus = "Di Luar Wilayah Kerja";
                 return;
             }
 
             statusText.innerHTML = `<span class="text-yellow-500"><i class="fa-solid fa-spinner fa-spin"></i> Memeriksa lokasi...</span>`;
-            
             navigator.geolocation.getCurrentPosition(
                 (position) => {
                     const userLat = position.coords.latitude;
                     const userLng = position.coords.longitude;
                     currentGpsData = `${userLat}, ${userLng}`;
-
                     const distance = calculateDistance(OFFICE_LAT, OFFICE_LNG, userLat, userLng);
                     currentDistanceMeters = Math.round(distance);
                     
@@ -328,9 +325,6 @@
                     }
                 },
                 (error) => {
-                    currentGpsData = "GPS Tidak Aktif";
-                    currentDistanceMeters = 0;
-                    attendanceStatus = "Di Luar Wilayah Kerja";
                     statusText.innerHTML = `<span class="text-yellow-400 font-medium">GPS Off / Tidak Terdeteksi</span>`;
                 },
                 { enableHighAccuracy: true, timeout: 5000 }
@@ -347,29 +341,25 @@
             return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
         }
 
-        // View Switcher yang telah dioptimasi untuk menghentikan Audio
         function switchView(viewId) {
             ['view-home', 'view-faceprint', 'view-admin-login', 'view-registration'].forEach(id => {
                 document.getElementById(id).classList.add('hidden');
             });
             document.getElementById(viewId).classList.remove('hidden');
 
+            // Hentikan Kamera & Audio Instan
             stopCamera();
+            stopAllAudio();
             
-            // --- HENTIKAN AUDIO DAN RESET STATE SAAT PINDAH MENU ---
-            if ('speechSynthesis' in window) {
-                window.speechSynthesis.cancel();
-            }
             lastRecognizedId = null;
             if (faceLostTimeout) {
                 clearTimeout(faceLostTimeout);
                 faceLostTimeout = null;
             }
             window.matchedUser = null;
-            // -------------------------------------------------------
             
             if (viewId === 'view-faceprint') {
-                if (!modelsLoaded) { alert("Model AI sedang dimuat dari server, mohon tunggu sebentar..."); switchView('view-home'); return; }
+                if (!modelsLoaded) { alert("Model AI sedang dimuat dari server..."); switchView('view-home'); return; }
                 fetchFaceDatabase().then(() => {
                     startCamera('video-feed').then(() => {
                         checkLocation();
@@ -377,7 +367,7 @@
                     });
                 });
             } else if (viewId === 'view-registration') {
-                if (!modelsLoaded) { alert("Model AI sedang dimuat dari server, mohon tunggu sebentar..."); switchView('view-home'); return; }
+                if (!modelsLoaded) { alert("Model AI sedang dimuat dari server..."); switchView('view-home'); return; }
                 startCamera('reg-video-feed');
                 resetRegistration();
                 fetchFaceDatabase().then(() => {
@@ -393,11 +383,12 @@
                 videoElement.srcObject = activeStream;
                 return new Promise(resolve => { videoElement.onloadedmetadata = () => resolve(); });
             } catch (err) {
-                alert("Gagal mengakses kamera. Pastikan izin akses kamera sudah diizinkan di browser!");
+                alert("Gagal mengakses kamera.");
             }
         }
 
         function stopCamera() {
+            isDetecting = false; // Matikan saklar deteksi
             if (activeStream) {
                 activeStream.getTracks().forEach(track => track.stop());
                 activeStream = null;
@@ -408,11 +399,8 @@
             }
         }
 
-        // Fungsi pembantu jika wajah tidak valid / tidak ada
         const handleFaceLoss = () => {
             window.matchedUser = null;
-            // Beri waktu 2.5 detik sebelum melupakan wajah sebelumnya.
-            // Ini mencegah suara terpicu berulang kali hanya karena mata berkedip / lag kamera.
             if (lastRecognizedId !== null && !faceLostTimeout) {
                 faceLostTimeout = setTimeout(() => {
                     lastRecognizedId = null; 
@@ -422,6 +410,8 @@
         };
 
         async function startFaceDetection(videoId, canvasId) {
+            isDetecting = true; // Nyalakan saklar
+            
             const video = document.getElementById(videoId);
             const canvas = document.getElementById(canvasId);
             const displaySize = { width: video.videoWidth || 640, height: video.videoHeight || 480 };
@@ -436,6 +426,8 @@
             let lastFrameTime = performance.now();
 
             const processLoop = async (now) => {
+                if (!isDetecting) return; 
+
                 detectAnimationId = requestAnimationFrame(processLoop);
 
                 const elapsed = now - lastFrameTime;
@@ -455,6 +447,12 @@
                         .withFaceLandmarks()
                         .withFaceDescriptor();
 
+                    // Batalkan jika pengguna menutup modal saat AI berpikir
+                    if (!isDetecting) {
+                        isProcessing = false;
+                        return; 
+                    }
+
                     const ctx = canvas.getContext('2d');
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
                     const statusLabel = document.getElementById('scan-status-label');
@@ -464,10 +462,7 @@
                         const scaleX = displaySize.width / offCanvas.width;
                         const scaleY = displaySize.height / offCanvas.height;
                         const drawBox = {
-                            x: box.x * scaleX,
-                            y: box.y * scaleY,
-                            width: box.width * scaleX,
-                            height: box.height * scaleY
+                            x: box.x * scaleX, y: box.y * scaleY, width: box.width * scaleX, height: box.height * scaleY
                         };
 
                         const bestMatch = faceMatcher.findBestMatch(detection.descriptor);
@@ -479,16 +474,14 @@
                             ctx.strokeStyle = '#10b981';
                             statusLabel.innerText = `Terdeteksi: [${id}] ${name} (${similarity}%)`;
                             
-                            // 1. Batalkan timer "lupa wajah" karena wajah masih terlihat
                             if (faceLostTimeout) {
                                 clearTimeout(faceLostTimeout);
                                 faceLostTimeout = null;
                             }
 
-                            // 2. Bunyikan suara HANYA jika ID ini berbeda dengan rekaman memori kita saat ini
                             if (lastRecognizedId !== id) {
                                 lastRecognizedId = id;
-                                playVerifiedSound();
+                                playVerifiedSound(); // Memutar Audio CDN
                             }
 
                             window.matchedUser = { id, name, distance: bestMatch.distance };
@@ -497,7 +490,6 @@
                             statusLabel.innerText = "Wajah Tidak Dikenal";
                             handleFaceLoss();
                         }
-
                         ctx.lineWidth = 3;
                         ctx.strokeRect(drawBox.x, drawBox.y, drawBox.width, drawBox.height);
                     } else if (detection) {
@@ -532,36 +524,25 @@
         }
 
         async function prosesAbsen() {
-            if (!window.matchedUser) { 
-                alert("Wajah tidak dikenali atau belum terdaftar!"); 
-                return; 
-            }
-
+            if (!window.matchedUser) { alert("Wajah tidak dikenali!"); return; }
             const btn = document.getElementById('btn-proses-absen');
-            btn.innerText = "Mengirim...";
-            btn.disabled = true;
+            btn.innerText = "Mengirim..."; btn.disabled = true;
 
             try {
                 const response = await fetch(API_URL, {
                     method: 'POST',
                     body: JSON.stringify({
-                        action: 'absen',
-                        id: window.matchedUser.id,
-                        name: window.matchedUser.name,
-                        gps: currentGpsData,
-                        radius: `${currentDistanceMeters} meter`,
-                        status: attendanceStatus
+                        action: 'absen', id: window.matchedUser.id, name: window.matchedUser.name,
+                        gps: currentGpsData, radius: `${currentDistanceMeters} meter`, status: attendanceStatus
                     })
                 });
-                
-                const result = await response.json();
-                alert(`Absensi Berhasil!\nID: ${window.matchedUser.id}\nNama: ${window.matchedUser.name}\nJarak: ${currentDistanceMeters} meter\nStatus: ${attendanceStatus}`);
+                await response.json();
+                alert(`Absensi Berhasil!\nNama: ${window.matchedUser.name}`);
                 switchView('view-home');
             } catch (err) {
-                alert("Gagal mengirim absensi. Pastikan koneksi internet aktif.");
+                alert("Gagal mengirim absensi.");
             } finally {
-                btn.innerText = "Proses Absen";
-                btn.disabled = false;
+                btn.innerText = "Proses Absen"; btn.disabled = false;
             }
         }
 
@@ -571,59 +552,37 @@
             const p = document.getElementById('admin-pass').value;
             const btn = document.getElementById('btn-login-submit');
 
-            btn.innerText = "Memverifikasi...";
-            btn.disabled = true;
+            btn.innerText = "Memverifikasi..."; btn.disabled = true;
 
             try {
                 const response = await fetch(API_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({ action: 'admin_login', username: u, password: p })
+                    method: 'POST', body: JSON.stringify({ action: 'admin_login', username: u, password: p })
                 });
                 const result = await response.json();
-
                 if (result.status === 'success') {
-                    alert("Login Berhasil!");
-                    switchView('view-registration');
-                    document.getElementById('admin-user').value = '';
-                    document.getElementById('admin-pass').value = '';
-                } else {
-                    alert(result.message);
-                }
-            } catch (err) {
-                alert("Kesalahan koneksi ke database server.");
-            } finally {
-                btn.innerText = "Masuk ke Pendaftaran";
-                btn.disabled = false;
-            }
+                    alert("Login Berhasil!"); switchView('view-registration');
+                } else { alert(result.message); }
+            } catch (err) { alert("Kesalahan server."); } 
+            finally { btn.innerText = "Masuk ke Pendaftaran"; btn.disabled = false; }
         }
 
         let currentPoseStep = 1;
         const totalPoses = 7;
         let registeredFaceDescriptors = []; 
         const poseDescriptions = [
-            "Langkah 1/7: Hadap Depan Lurus (Netral)",
-            "Langkah 2/7: Sedikit Menoleh ke Kiri",
-            "Langkah 3/7: Sedikit Menoleh ke Kanan",
-            "Langkah 4/7: Sedikit Menunduk ke Bawah",
-            "Langkah 5/7: Sedikit Mendongak ke Atas",
-            "Langkah 6/7: Hadap Depan (Mata Tertutup Rapat)",
-            "Langkah 7/7: Hadap Depan (Mata Terbuka Lebar)"
+            "Langkah 1/7: Hadap Depan Lurus", "Langkah 2/7: Menoleh ke Kiri", "Langkah 3/7: Menoleh ke Kanan",
+            "Langkah 4/7: Menunduk ke Bawah", "Langkah 5/7: Mendongak ke Atas", "Langkah 6/7: Mata Tertutup Rapat", "Langkah 7/7: Mata Terbuka Lebar"
         ];
 
         async function captureNextPose() {
-            const idInput = document.getElementById('reg-id');
-            const nameInput = document.getElementById('reg-name');
-            const id = idInput.value.trim();
-            const name = nameInput.value.trim();
-
-            if(!id || !name) { alert("Isi User ID dan Nama Lengkap terlebih dahulu!"); return; }
+            const id = document.getElementById('reg-id').value.trim();
+            const name = document.getElementById('reg-name').value.trim();
+            if(!id || !name) { alert("Isi User ID dan Nama Lengkap!"); return; }
             
             const video = document.getElementById('reg-video-feed');
             const detection = await faceapi.detectSingleFace(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
-                    .withFaceLandmarks()
-                    .withFaceDescriptor();
-                    
-            if(!detection) { alert("Wajah tidak terdeteksi jelas! Pastikan pencahayaan cukup dan wajah terlihat lurus ke kamera."); return; }
+                    .withFaceLandmarks().withFaceDescriptor();
+            if(!detection) { alert("Wajah tidak jelas!"); return; }
             
             registeredFaceDescriptors.push(Array.from(detection.descriptor));
 
@@ -639,19 +598,14 @@
                     await fetch(API_URL, {
                         method: 'POST',
                         body: JSON.stringify({
-                            action: 'register',
-                            id: id,
-                            name: name,
-                            descriptors: registeredFaceDescriptors
+                            action: 'register', id: id, name: name, descriptors: registeredFaceDescriptors
                         })
                     });
                     alert("Pendaftaran wajah berhasil disimpan ke database!");
-                    
-                    nameInput.value = '';
+                    document.getElementById('reg-name').value = '';
                     await fetchFaceDatabase();
                     generateNextUserId();
                     resetRegistration();
-                    
                     switchView('view-home');
                 } catch (err) {
                     alert("Gagal menyimpan data ke server.");
