@@ -30,7 +30,7 @@
     <header class="w-full bg-brand-card border-b border-slate-800 p-4 flex justify-between items-center shadow-md">
         <div class="flex items-center space-x-3">
             <div class="w-3 h-3 bg-brand-success rounded-full animate-pulse"></div>
-            <span class="font-bold tracking-wider text-sm md:text-base">BIO-ATTENDANCE SYSTEM</span>
+            <span class="font-bold tracking-wider text-sm md:text-base">Mulyadi_BIO-ATTENDANCE SYSTEM</span>
         </div>
         <div id="real-time-clock" class="text-sm font-mono text-slate-400">00:00:00 | 00-00-0000</div>
     </header>
@@ -213,18 +213,20 @@
             document.getElementById('real-time-clock').innerText = `${timeString} | ${dateString}`;
         }, 1000);
 
-        // Suara AI "Verified"
+        // Suara AI "Verified" (SUDAH DIPERBAIKI)
         function playVerifiedSound() {
             if (hasSpokenVerified) return;
-            if (!('speechSynthesis' in window)) {
-                hasSpokenVerified = true;
-                return;
-            }
+            if (!('speechSynthesis' in window)) return;
+
             const now = Date.now();
-            if (now - lastSpokenTime < 2000) return; // debounce: 2s
-            lastSpokenTime = now;
-            hasSpokenVerified = true;
+            if (now - lastSpokenTime < 2000) return; // Debounce 2 detik
+
+            // Jika browser masih memproses suara sebelumnya, jangan kunci flag dulu
             if (window.speechSynthesis.speaking || window.speechSynthesis.pending) return;
+
+            lastSpokenTime = now;
+            hasSpokenVerified = true; // Kunci flag tepat sebelum suara diputar
+
             const utterance = new SpeechSynthesisUtterance("Verified");
             utterance.lang = "en-US";
             utterance.pitch = 1.0;
@@ -408,7 +410,7 @@
             }
         }
 
-        // Deteksi & Pencocokan Wajah yang Diperbaiki
+        // Deteksi & Pencocokan Wajah yang Diperbaiki (SUDAH DIPERBAIKI)
         async function startFaceDetection(videoId, canvasId) {
             const video = document.getElementById(videoId);
             const canvas = document.getElementById(canvasId);
@@ -468,16 +470,23 @@
 
                             ctx.strokeStyle = '#10b981';
                             statusLabel.innerText = `Terdeteksi: [${id}] ${name} (${similarity}%)`;
+                            
+                            // RESET LOGIC: Jika wajah yang terdeteksi berbeda dari wajah sebelumnya
+                            if (!window.matchedUser || window.matchedUser.id !== id) {
+                                hasSpokenVerified = false;
+                            }
+
                             window.matchedUser = { id, name, distance: bestMatch.distance };
 
-                            if (!hasSpokenVerified) {
-                                playVerifiedSound();
-                                hasSpokenVerified = true;
-                            }
+                            // Panggil pemutaran suara
+                            playVerifiedSound();
+
                         } else {
+                            // Wajah terdeteksi tapi tidak dikenal di database
                             ctx.strokeStyle = '#ef4444';
                             statusLabel.innerText = "Wajah Tidak Dikenal";
                             window.matchedUser = null;
+                            hasSpokenVerified = false; // RESET status agar bisa bersuara saat terdeteksi lagi
                         }
 
                         ctx.lineWidth = 3;
@@ -490,8 +499,13 @@
                         ctx.lineWidth = 2;
                         ctx.strokeRect(box.x * scaleX, box.y * scaleY, box.width * scaleX, box.height * scaleY);
                         statusLabel.innerText = "Database Kosong / Mencocokkan...";
+                        window.matchedUser = null;
+                        hasSpokenVerified = false; // RESET status
                     } else {
+                        // Tidak ada wajah di area pemindaian
                         statusLabel.innerText = "Posisikan Wajah";
+                        window.matchedUser = null;
+                        hasSpokenVerified = false; // RESET status
                     }
 
                     // Adaptive FPS: if processing is slow, reduce targetFps; if fast, slowly increase
