@@ -11,8 +11,10 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Face-API.js CDN -->
     <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-    <!-- SweetAlert2 CDN (Untuk Popup Notifikasi Lengkap) -->
+    <!-- SweetAlert2 CDN -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <!-- ResponsiveVoice.js CDN -->
+    <script src="https://code.responsivevoice.org/responsivevoice.js?key=FREE_KEY"></script>
 
     <script>
         tailwind.config = {
@@ -32,7 +34,7 @@
     <header class="w-full bg-brand-card border-b border-slate-800 p-4 flex justify-between items-center shadow-md">
         <div class="flex items-center space-x-3">
             <div class="w-3 h-3 bg-brand-success rounded-full animate-pulse"></div>
-            <span class="font-bold tracking-wider text-sm md:text-base">Mulyadi _ BIO ATTENDANCE SYSTEM</span>
+            <span class="font-bold tracking-wider text-sm md:text-base">BIO-ATTENDANCE SYSTEM</span>
         </div>
         <div id="real-time-clock" class="text-sm font-mono text-slate-400">00:00:00 | 00-00-0000</div>
     </header>
@@ -182,13 +184,6 @@
         // CDN Model Face-API.js
         const MODEL_URL = "https://justadudewhohacks.github.io/face-api.js/models";
 
-        // --- KONFIGURASI AUDIO CDN ---
-        // Anda dapat mengganti URL file MP3 di bawah dengan URL audio AI milik Anda sendiri
-        const AUDIO_VERIFIED_URL = "https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3"; 
-        
-        const audioVerified = new Audio(AUDIO_VERIFIED_URL);
-        audioVerified.preload = "auto"; // Preload otomatis ke memori browser
-
         const OFFICE_LAT = 5.350205443577465;
         const OFFICE_LNG = 100.30359071228548;
         const MAX_RADIUS_METERS = 500;
@@ -206,6 +201,7 @@
         let lastRecognizedId = null; 
         let faceLostTimeout = null;
         let isDetecting = false; // Kill Switch
+        let ttsTimeoutId = null; // ID Pembersih Delay TTS
         
         let targetFps = 8;
         const MIN_FPS = 4;
@@ -219,24 +215,62 @@
             document.getElementById('real-time-clock').innerText = `${timeString} | ${dateString}`;
         }, 1000);
 
-        // --- FUNGSI PEMUTAR AUDIO CDN ---
-        function playVerifiedSound() {
-            if (!isDetecting) return; // Jangan bersuara jika scanner ditutup
+        // --- FUNGSI FALLBACK SPEECH API NATIVE (JIKA RESPONSIVEVOICE OFF/GAGAL) ---
+        function speakNativeFallback(text, lang = 'id-ID') {
+            if (!('speechSynthesis' in window)) return;
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = lang;
+            utterance.rate = 0.95;
+            window.speechSynthesis.speak(utterance);
+        }
 
-            // Hentikan dan reset posisi audio jika sedang berjalan
-            audioVerified.pause();
-            audioVerified.currentTime = 0;
+        // --- FUNGSI PEMUTAR AUDIO UCAPAN SECARA LENGKAP & AMAN ---
+        function playVerifiedSound(userName = "") {
+            if (!isDetecting) return; 
 
-            audioVerified.play().catch(err => {
-                console.warn("Autoplay diblokir browser atau file audio gagal dimuat:", err);
-            });
+            stopAllAudio();
+
+            const textEnglish = "Verified"; 
+            const textIndonesian = `Terima kasih, ${userName}.`;
+
+            if (typeof responsiveVoice !== 'undefined' && responsiveVoice.voiceSupport()) {
+                responsiveVoice.speak(textEnglish, "UK English Female", {
+                    pitch: 1,
+                    rate: 0.95,
+                    onend: function() {
+                        if (userName && isDetecting) {
+                            ttsTimeoutId = setTimeout(() => {
+                                responsiveVoice.speak(textIndonesian, "Indonesian Female", {
+                                    pitch: 1,
+                                    rate: 0.95
+                                });
+                            }, 150);
+                        }
+                    }
+                });
+            } else {
+                // Fallback Native Speech API jika ResponsiveVoice tidak merespon
+                speakNativeFallback(textEnglish, 'en-US');
+                if (userName && isDetecting) {
+                    ttsTimeoutId = setTimeout(() => {
+                        speakNativeFallback(textIndonesian, 'id-ID');
+                    }, 800);
+                }
+            }
         }
 
         // --- FUNGSI PEMATIAN AUDIO INSTAN (Kill Switch Audio) ---
         function stopAllAudio() {
-            if (audioVerified) {
-                audioVerified.pause();
-                audioVerified.currentTime = 0; // Hentikan total dan balik ke detik 0
+            if (ttsTimeoutId) {
+                clearTimeout(ttsTimeoutId);
+                ttsTimeoutId = null;
+            }
+            if (typeof responsiveVoice !== 'undefined') {
+                try { responsiveVoice.cancel(); } catch(e){}
+            }
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
             }
         }
 
@@ -349,7 +383,6 @@
             });
             document.getElementById(viewId).classList.remove('hidden');
 
-            // Hentikan Kamera & Audio Instan
             stopCamera();
             stopAllAudio();
             
@@ -390,7 +423,7 @@
         }
 
         function stopCamera() {
-            isDetecting = false; // Matikan saklar deteksi
+            isDetecting = false; 
             if (activeStream) {
                 activeStream.getTracks().forEach(track => track.stop());
                 activeStream = null;
@@ -412,7 +445,7 @@
         };
 
         async function startFaceDetection(videoId, canvasId) {
-            isDetecting = true; // Nyalakan saklar
+            isDetecting = true; 
             
             const video = document.getElementById(videoId);
             const canvas = document.getElementById(canvasId);
@@ -449,7 +482,6 @@
                         .withFaceLandmarks()
                         .withFaceDescriptor();
 
-                    // Batalkan jika pengguna menutup modal saat AI berpikir
                     if (!isDetecting) {
                         isProcessing = false;
                         return; 
@@ -483,7 +515,7 @@
 
                             if (lastRecognizedId !== id) {
                                 lastRecognizedId = id;
-                                playVerifiedSound(); // Memutar Audio CDN
+                                playVerifiedSound(name); 
                             }
 
                             window.matchedUser = { id, name, distance: bestMatch.distance };
@@ -544,7 +576,6 @@
                 });
                 await response.json();
 
-                // POPUP NOTIFIKASI INFORMASI LENGKAP
                 if (typeof Swal !== 'undefined') {
                     await Swal.fire({
                         icon: 'success',
