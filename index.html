@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Face-API.js CDN -->
     <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-    <!-- SweetAlert2 CDN (Untuk Popup Notifikasi Lengkap) -->
+    <!-- SweetAlert2 CDN -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
     <script>
@@ -32,7 +32,7 @@
     <header class="w-full bg-brand-card border-b border-slate-800 p-4 flex justify-between items-center shadow-md">
         <div class="flex items-center space-x-3">
             <div class="w-3 h-3 bg-brand-success rounded-full animate-pulse"></div>
-            <span class="font-bold tracking-wider text-sm md:text-base">Mulyadi _ BIO-ATTENDANCE SYSTEM</span>
+            <span class="font-bold tracking-wider text-sm md:text-base">Mulyadi _ BIO ATTENDANCE SYSTEM</span>
         </div>
         <div id="real-time-clock" class="text-sm font-mono text-slate-400">00:00:00 | 00-00-0000</div>
     </header>
@@ -182,13 +182,6 @@
         // CDN Model Face-API.js
         const MODEL_URL = "https://justadudewhohacks.github.io/face-api.js/models";
 
-        // --- KONFIGURASI AUDIO CDN ---
-        // Anda dapat mengganti URL file MP3 di bawah dengan URL audio AI milik Anda sendiri
-        const AUDIO_VERIFIED_URL = "https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3"; 
-        
-        const audioVerified = new Audio(AUDIO_VERIFIED_URL);
-        audioVerified.preload = "auto"; // Preload otomatis ke memori browser
-
         const OFFICE_LAT = 5.350205443577465;
         const OFFICE_LNG = 100.30359071228548;
         const MAX_RADIUS_METERS = 500;
@@ -206,6 +199,7 @@
         let lastRecognizedId = null; 
         let faceLostTimeout = null;
         let isDetecting = false; // Kill Switch
+        let currentAudio = null; // Menyimpan objek audio aktif
         
         let targetFps = 8;
         const MIN_FPS = 4;
@@ -219,24 +213,67 @@
             document.getElementById('real-time-clock').innerText = `${timeString} | ${dateString}`;
         }, 1000);
 
-        // --- FUNGSI PEMUTAR AUDIO CDN ---
-        function playVerifiedSound() {
-            if (!isDetecting) return; // Jangan bersuara jika scanner ditutup
-
-            // Hentikan dan reset posisi audio jika sedang berjalan
-            audioVerified.pause();
-            audioVerified.currentTime = 0;
-
-            audioVerified.play().catch(err => {
-                console.warn("Autoplay diblokir browser atau file audio gagal dimuat:", err);
+        // --- FUNGSI HELPER UTAMA TTS DINAMIS ---
+        function playAudioChunk(text, lang = 'en') {
+            return new Promise((resolve) => {
+                if (!isDetecting) return resolve();
+                
+                const encodedText = encodeURIComponent(text);
+                const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=${lang}&client=tw-ob`;
+                
+                currentAudio = new Audio(ttsUrl);
+                
+                currentAudio.onended = () => {
+                    currentAudio = null;
+                    resolve();
+                };
+                currentAudio.onerror = (err) => {
+                    console.warn("Gagal memutar audio TTS:", err);
+                    currentAudio = null;
+                    resolve();
+                };
+                
+                currentAudio.play().catch(err => {
+                    console.warn("Autoplay diblokir atau diganggu:", err);
+                    currentAudio = null;
+                    resolve();
+                });
             });
+        }
+
+        // --- FUNGSI PEMUTAR AUDIO SUARA VERIFIED & NAMA USER ---
+        async function playVerifiedSound(userName = "") {
+            if (!isDetecting) return; 
+
+            // Hentikan audio sebelumnya jika ada
+            stopAllAudio();
+
+            // TEMPLATE TEKS AUDIO (Dapat diubah-ubah di kemudian hari)
+            const textEnglish = "Access Granted"; 
+            const textIndonesian = `Terima kasih, ${userName}.`;
+
+            try {
+                // 1. Suara Wanita Bahasa Inggris ("Verified")
+                await playAudioChunk(textEnglish, 'en');
+
+                // Jeda 150ms agar alur pembacaan alami
+                await new Promise(r => setTimeout(r, 150));
+
+                // 2. Suara Wanita Bahasa Indonesia (Nama/Pesan)
+                if (userName) {
+                    await playAudioChunk(textIndonesian, 'id');
+                }
+            } catch (err) {
+                console.error("Error pada pemutaran TTS:", err);
+            }
         }
 
         // --- FUNGSI PEMATIAN AUDIO INSTAN (Kill Switch Audio) ---
         function stopAllAudio() {
-            if (audioVerified) {
-                audioVerified.pause();
-                audioVerified.currentTime = 0; // Hentikan total dan balik ke detik 0
+            if (currentAudio) {
+                currentAudio.pause();
+                currentAudio.currentTime = 0;
+                currentAudio = null;
             }
         }
 
@@ -483,7 +520,7 @@
 
                             if (lastRecognizedId !== id) {
                                 lastRecognizedId = id;
-                                playVerifiedSound(); // Memutar Audio CDN
+                                playVerifiedSound(name); // Memutar Suara TTS Inggris + Nama Indonesia
                             }
 
                             window.matchedUser = { id, name, distance: bestMatch.distance };
