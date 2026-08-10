@@ -32,7 +32,7 @@
     <header class="w-full bg-brand-card border-b border-slate-800 p-4 flex justify-between items-center shadow-md">
         <div class="flex items-center space-x-3">
             <div class="w-3 h-3 bg-brand-success rounded-full animate-pulse"></div>
-            <span class="font-bold tracking-wider text-sm md:text-base">Mulyadi _ BIO ATTENDANCE SYSTEM</span>
+            <span class="font-bold tracking-wider text-sm md:text-base">BIO-ATTENDANCE SYSTEM</span>
         </div>
         <div id="real-time-clock" class="text-sm font-mono text-slate-400">00:00:00 | 00-00-0000</div>
     </header>
@@ -213,28 +213,37 @@
             document.getElementById('real-time-clock').innerText = `${timeString} | ${dateString}`;
         }, 1000);
 
-        // --- FUNGSI HELPER UTAMA TTS DINAMIS ---
+        // --- FUNGSI GOOGLE TTS VIA PROXY CDN (ANTI CORS) ---
         function playAudioChunk(text, lang = 'en') {
             return new Promise((resolve) => {
                 if (!isDetecting) return resolve();
                 
                 const encodedText = encodeURIComponent(text);
-                const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=${lang}&client=tw-ob`;
+                const rawGoogleUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=${lang}&client=tw-ob`;
                 
-                currentAudio = new Audio(ttsUrl);
+                // Proxy 1: Bypass CORS
+                const proxyUrl = `https://api.cors.lol/?url=${encodeURIComponent(rawGoogleUrl)}`;
+                
+                currentAudio = new Audio(proxyUrl);
                 
                 currentAudio.onended = () => {
                     currentAudio = null;
                     resolve();
                 };
+                
                 currentAudio.onerror = (err) => {
-                    console.warn("Gagal memutar audio TTS:", err);
-                    currentAudio = null;
-                    resolve();
+                    console.warn("Proxy 1 gagal, mencoba fallback Proxy 2...", err);
+                    // Proxy 2 Fallback: AllOrigins
+                    const fallbackProxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(rawGoogleUrl)}`;
+                    const fallbackAudio = new Audio(fallbackProxyUrl);
+                    
+                    fallbackAudio.onended = () => resolve();
+                    fallbackAudio.onerror = () => resolve();
+                    fallbackAudio.play().catch(() => resolve());
                 };
                 
                 currentAudio.play().catch(err => {
-                    console.warn("Autoplay diblokir atau diganggu:", err);
+                    console.warn("Autoplay terhalang kebijakan browser:", err);
                     currentAudio = null;
                     resolve();
                 });
@@ -248,18 +257,18 @@
             // Hentikan audio sebelumnya jika ada
             stopAllAudio();
 
-            // TEMPLATE TEKS AUDIO (Dapat diubah-ubah di kemudian hari)
-            const textEnglish = "Access Granted"; 
+            // TEMPLATE TEKS AUDIO (Dapat diubah-ubah sesuai keinginan Anda)
+            const textEnglish = "Verified"; 
             const textIndonesian = `Terima kasih, ${userName}.`;
 
             try {
-                // 1. Suara Wanita Bahasa Inggris ("Verified")
+                // 1. Suara Wanita Google TTS Bahasa Inggris ("Verified")
                 await playAudioChunk(textEnglish, 'en');
 
-                // Jeda 150ms agar alur pembacaan alami
-                await new Promise(r => setTimeout(r, 150));
+                // Jeda 200ms agar ritme ucapan alami
+                await new Promise(r => setTimeout(r, 200));
 
-                // 2. Suara Wanita Bahasa Indonesia (Nama/Pesan)
+                // 2. Suara Wanita Google TTS Bahasa Indonesia (Nama/Pesan)
                 if (userName) {
                     await playAudioChunk(textIndonesian, 'id');
                 }
@@ -520,7 +529,7 @@
 
                             if (lastRecognizedId !== id) {
                                 lastRecognizedId = id;
-                                playVerifiedSound(name); // Memutar Suara TTS Inggris + Nama Indonesia
+                                playVerifiedSound(name); // Memutar Suara Google TTS
                             }
 
                             window.matchedUser = { id, name, distance: bestMatch.distance };
