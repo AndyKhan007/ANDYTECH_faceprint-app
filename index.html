@@ -241,7 +241,7 @@
                     onend: function() {
                         if (userName && isDetecting) {
                             ttsTimeoutId = setTimeout(() => {
-                                responsiveVoice.speak(textIndonesian, "Malay Female", {
+                                responsiveVoice.speak(textMalay, "Malay Female", {
                                     pitch: 1,
                                     rate: 0.95
                                 });
@@ -254,7 +254,7 @@
                 speakNativeFallback(textEnglish, 'en-US');
                 if (userName && isDetecting) {
                     ttsTimeoutId = setTimeout(() => {
-                        speakNativeFallback(textIndonesian, 'id-ID');
+                        speakNativeFallback(textMalay, 'ms-MY');
                     }, 1250);
                 }
             }
