@@ -231,13 +231,13 @@
 
             stopAllAudio();
 
-            const textEnglish = "Status Verified"; 
+            const textEnglish = "Status, Verified"; 
             const textIndonesian = `Terima kasih, ${userName}.,selamat bekerja`;
 
             if (typeof responsiveVoice !== 'undefined' && responsiveVoice.voiceSupport()) {
                 responsiveVoice.speak(textEnglish, "UK English Female", {
                     pitch: 1,
-                    rate: 0.95,
+                    rate: 0.50,
                     onend: function() {
                         if (userName && isDetecting) {
                             ttsTimeoutId = setTimeout(() => {
