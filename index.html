@@ -232,7 +232,7 @@
             stopAllAudio();
 
             const textEnglish = "Verified"; 
-            const textIndonesian = `Terima kasih, ${userName}.,selamat bekerja`;
+            const textMalay = `Terima kasih, ${userName}.,selamat bekerja`;
 
             if (typeof responsiveVoice !== 'undefined' && responsiveVoice.voiceSupport()) {
                 responsiveVoice.speak(textEnglish, "US English Female", {
@@ -241,7 +241,7 @@
                     onend: function() {
                         if (userName && isDetecting) {
                             ttsTimeoutId = setTimeout(() => {
-                                responsiveVoice.speak(textIndonesian, "Indonesian Female", {
+                                responsiveVoice.speak(textIndonesian, "Malay Female", {
                                     pitch: 1,
                                     rate: 0.95
                                 });
