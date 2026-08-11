@@ -225,15 +225,40 @@
             window.speechSynthesis.speak(utterance);
         }
 
-        // --- FUNGSI PEMUTAR AUDIO UCAPAN SECARA LENGKAP & AMAN ---
+        // --- FUNGSI PEMUTAR AUDIO UCAPAN DENGAN AUTO-SAPAAN RESPONSIVEVOICE ---
         function playVerifiedSound(userName = "") {
             if (!isDetecting) return; 
 
             stopAllAudio();
 
-            const textEnglish = "Verified"; 
-            const textMalay = `Terima kasih, ${userName}.,face print berjaya, sila tekan butang hijau untuk melanjutkan`;
+            // 1. Tentukan Sapaan Berdasarkan Jam & Menit Lokal
+            const now = new Date();
+            const jam = now.getHours();
+            const menit = now.getMinutes();
+            const totalMenit = jam * 60 + menit; // Konversi ke total menit untuk perhitungan presisi
 
+            let pesanSapaan = "";
+
+            // Jam 07:00 - 07:30 (420 menit - 450 menit)
+            if (totalMenit >= 420 && totalMenit <= 450) {
+                pesanSapaan = `Terima kasih ${userName}, selamat bekerja.`;
+            } 
+            // Tengah Hari / Jam Istirahat (11:30 - 13:30) (690 menit - 810 menit)
+            else if (totalMenit >= 690 && totalMenit <= 810) {
+                pesanSapaan = `Terima kasih ${userName}, selamat istirahat.`;
+            } 
+            // Jam Pulang Kerja (16:00 ke atas)
+            else if (jam >= 16) {
+                pesanSapaan = `Terima kasih ${userName}, hati-hati di jalan.`;
+            } 
+            // Sapaan Standar untuk jam operasional lainnya
+            else {
+                pesanSapaan = `Terima kasih ${userName}, face print berhasil. Sila tekan butang hijau untuk melanjutkan.`;
+            }
+
+            const textEnglish = "Verified"; 
+
+            // 2. Eksekusi ResponsiveVoice
             if (typeof responsiveVoice !== 'undefined' && responsiveVoice.voiceSupport()) {
                 responsiveVoice.speak(textEnglish, "US English Female", {
                     pitch: 1,
@@ -241,7 +266,7 @@
                     onend: function() {
                         if (userName && isDetecting) {
                             ttsTimeoutId = setTimeout(() => {
-                                responsiveVoice.speak(textMalay, "Malay Female", {
+                                responsiveVoice.speak(pesanSapaan, "Malay Female", {
                                     pitch: 1,
                                     rate: 0.95
                                 });
@@ -250,11 +275,11 @@
                     }
                 });
             } else {
-                // Fallback Native Speech API jika ResponsiveVoice tidak merespon
+                // Fallback Native Speech API jika ResponsiveVoice offline/gagal dimuat
                 speakNativeFallback(textEnglish, 'en-US');
                 if (userName && isDetecting) {
                     ttsTimeoutId = setTimeout(() => {
-                        speakNativeFallback(textMalay, 'ms-MY');
+                        speakNativeFallback(pesanSapaan, 'ms-MY');
                     }, 1250);
                 }
             }
@@ -643,6 +668,16 @@
             const detection = await faceapi.detectSingleFace(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
                     .withFaceLandmarks().withFaceDescriptor();
             if(!detection) { alert("Wajah tidak jelas!"); return; }
+
+            // === LOGIKA CEK DUPLIKASI WAJAH DI LANGKAH PERTAMA ===
+            if (currentPoseStep === 1 && faceMatcher) {
+                const bestMatch = faceMatcher.findBestMatch(detection.descriptor);
+                if (bestMatch.label !== 'unknown' && bestMatch.distance < 0.50) {
+                    const registeredName = bestMatch.label.split('|')[1] || bestMatch.label;
+                    alert(`❌ PENDAFTARAN DITOLAK!\n\nWajah ini sudah terdaftar di sistem atas nama:\n👉 ${registeredName}`);
+                    return; // Menghentikan proses pendaftaran
+                }
+            }
             
             registeredFaceDescriptors.push(Array.from(detection.descriptor));
 
