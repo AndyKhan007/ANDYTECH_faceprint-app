@@ -231,8 +231,8 @@
 
             stopAllAudio();
 
-            const textEnglish = "status Verified"; 
-            const textMalay = `Terima kasih ${userName}.,face print berjaya sila tekan butang hijau untuk lanjutkan`;
+            const textEnglish = "Verified"; 
+            const textMalay = `Terima kasih, ${userName}.,face print berjaya, sila tekan butang hijau untuk melanjutkan`;
 
             if (typeof responsiveVoice !== 'undefined' && responsiveVoice.voiceSupport()) {
                 responsiveVoice.speak(textEnglish, "US English Female", {
