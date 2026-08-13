@@ -241,19 +241,19 @@
 
             // Jam 07:00 - 07:30 (420 menit - 450 menit)
             if (totalMenit >= 420 && totalMenit <= 450) {
-                pesanSapaan = `Terima kasih ${userName}, selamat bekerja.`;
+                pesanSapaan = `Good Morning, ${userName}, selamat bekerja.`;
             } 
             // Tengah Hari / Jam Istirahat (11:30 - 13:30) (690 menit - 810 menit)
             else if (totalMenit >= 690 && totalMenit <= 810) {
-                pesanSapaan = `Terima kasih ${userName}, selamat istirahat.`;
+                pesanSapaan = `Hello, ${userName},`;
             } 
             // Jam Pulang Kerja (16:00 ke atas)
             else if (jam >= 16) {
-                pesanSapaan = `Terima kasih ${userName}, hati-hati di jalan.`;
+                pesanSapaan = `Terima kasih, ${userName}, Selamat Berehat.`;
             } 
             // Sapaan Standar untuk jam operasional lainnya
             else {
-                pesanSapaan = `Terima kasih ${userName}, face print berhasil. Sila tekan butang hijau untuk melanjutkan.`;
+                pesanSapaan = `Terima kasih, ${userName}, face print berjaya.`;
             }
 
             const textEnglish = "Verified"; 
